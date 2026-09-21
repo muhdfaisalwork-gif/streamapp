@@ -252,8 +252,12 @@ function AppHeader({ navigation, title }) {
 function HomeScreen({ navigation }) {
     const [categories, setCategories] = useState([]);
     const [hero, setHero] = useState(null);
+    const [heroSlides, setHeroSlides] = useState([]);
+    const [heroIndex, setHeroIndex] = useState(0);
+    const [heroPaused, setHeroPaused] = useState(false);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [continueWatching, setContinueWatching] = useState([]);
 
     const loadHome = useCallback(async () => {
         try {
@@ -261,7 +265,24 @@ function HomeScreen({ navigation }) {
             const data = await res.json();
             setCategories(data.categories || []);
             const trending = data.categories?.find(c => c.id === 'trending');
-            setHero(trending?.items?.[0] || null);
+            // Build carousel slides: top trending first, then take up to 5 unique items
+            const slides = [];
+            const seen = new Set();
+            const pushUnique = (it) => {
+                if (it && it.id && !seen.has(it.id)) { seen.add(it.id); slides.push(it); }
+            };
+            if (trending) (trending.items || []).slice(0, 5).forEach(pushUnique);
+            // Fill from other categories if trending had < 5
+            if (slides.length < 5) {
+                for (const cat of (data.categories || [])) {
+                    if (slides.length >= 5) break;
+                    (cat.items || []).slice(0, 3).forEach(pushUnique);
+                    if (slides.length >= 5) break;
+                }
+            }
+            setHeroSlides(slides.slice(0, 5));
+            setHero(slides[0] || null);
+            setHeroIndex(0);
         } catch (err) {
             console.error('Home load failed:', err);
         } finally {
@@ -271,6 +292,61 @@ function HomeScreen({ navigation }) {
     }, []);
 
     useEffect(() => { loadHome(); }, [loadHome]);
+
+    // Read Continue Watching from localStorage 'history' (PlayerScreen.recordProgress saves full metadata)
+    const loadContinueWatching = useCallback(async () => {
+        try {
+            const history = Storage.get('history', {});
+            const entries = Object.entries(history || {})
+                .map(([id, h]) => ({ id, ...(h || {}) }))
+                .filter(e => Number(e.pct) > 5 && Number(e.pct) < 95)
+                .sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0))
+                .slice(0, 10);
+            if (entries.length === 0) { setContinueWatching([]); return; }
+            // Hydrate any entries missing metadata by searching the backend
+            const needsFetch = entries.filter(e => !e.title);
+            if (needsFetch.length > 0) {
+                try {
+                    const params = new URLSearchParams();
+                    params.set('q', entries[0]?.title || '');
+                    const res = await fetch(`${API_BASE}/search?${params}`);
+                    const data = await res.json();
+                    const byId = {};
+                    (data.results || []).forEach(r => { if (r && r.id) byId[r.id] = r; });
+                    for (let i = 0; i < entries.length; i++) {
+                        if (!entries[i].title && byId[entries[i].id]) entries[i] = { ...byId[entries[i].id], pct: entries[i].pct, ts: entries[i].ts };
+                    }
+                } catch (_) { /* ignore */ }
+            }
+            setContinueWatching(entries);
+        } catch (err) {
+            console.error('Continue Watching load failed:', err);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadContinueWatching();
+        const unsubscribe = navigation.addListener('focus', loadContinueWatching);
+        return unsubscribe;
+    }, [navigation, loadContinueWatching]);
+
+    // Hero rotation: every 6s, pause on click or if user prefers reduced motion
+    useEffect(() => {
+        if (heroSlides.length <= 1 || heroPaused) return;
+        let reduced = false;
+        try {
+            reduced = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        } catch (e) { /* ignore */ }
+        if (reduced) return;
+        const t = setInterval(() => {
+            setHeroIndex((i) => {
+                const next = (i + 1) % heroSlides.length;
+                setHero(heroSlides[next]);
+                return next;
+            });
+        }, 6000);
+        return () => clearInterval(t);
+    }, [heroSlides, heroPaused]);
 
     const onSelectMedia = useCallback((item) => {
         if (item.type === 'tv') {
@@ -329,7 +405,46 @@ function HomeScreen({ navigation }) {
                                 </TouchableOpacity>
                             </View>
                         </View>
+                        {heroSlides.length > 1 && (
+                            <View style={styles.heroIndicators}>
+                                {heroSlides.map((_, i) => (
+                                    <TouchableOpacity
+                                        key={i}
+                                        onPress={(e) => { e.stopPropagation && e.stopPropagation(); setHeroPaused(true); setHeroIndex(i); setHero(heroSlides[i]); }}
+                                        style={[styles.heroDot, i === heroIndex && styles.heroDotActive]}
+                                    />
+                                ))}
+                            </View>
+                        )}
                     </TouchableOpacity>
+                )}
+
+                {continueWatching.length > 0 && (
+                    <View style={styles.continueWatchingSection}>
+                        <View style={styles.categoryHeader}>
+                            <Text style={styles.categoryTitle}>Continue Watching</Text>
+                            <Text style={styles.categoryMeta}>{continueWatching.length} in progress ›</Text>
+                        </View>
+                        <FlatList
+                            horizontal
+                            data={continueWatching}
+                            keyExtractor={(item, idx) => `${item.id}-${idx}`}
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.continueWatchingList}
+                            renderItem={({ item }) => (
+                                <View style={styles.cardSlot}>
+                                    <MediaCard
+                                        item={item}
+                                        onPress={(m) => {
+                                            if ((m.type || 'movie') === 'tv') navigation.navigate('TVDetail', { item: m });
+                                            else navigation.navigate('Player', { item: m });
+                                        }}
+                                        showProgress
+                                    />
+                                </View>
+                            )}
+                        />
+                    </View>
                 )}
 
                 {categories.map(cat => (
@@ -371,6 +486,8 @@ function SearchScreen({ route, navigation }) {
     const parentParam = navigation.getParent()?.getState()?.routes?.find(r => r.name === 'Search')?.params?.prefLang;
     const initialQuery = route?.params?.prefLang || parentParam || '';
     const [query, setQuery] = useState(initialQuery);
+    const { width } = useWindowDimensions();
+    const numCols = width >= 1400 ? 6 : width >= 1024 ? 5 : width >= 768 ? 4 : width >= 480 ? 3 : 2;
     const [typeFilter, setTypeFilter] = useState('all');
     const [searchMode, setSearchMode] = useState('live'); // 'live' | 'curated'
     const [results, setResults] = useState([]);
@@ -488,7 +605,7 @@ function SearchScreen({ route, navigation }) {
                 <FlatList
                     data={results}
                     keyExtractor={(item) => item.id}
-                    numColumns={3}
+                    numColumns={numCols}
                     contentContainerStyle={styles.searchGrid}
                     columnWrapperStyle={styles.searchRow}
                     renderItem={({ item }) => (
@@ -518,6 +635,8 @@ function SearchScreen({ route, navigation }) {
 function WatchlistScreen({ navigation }) {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
+    const { width } = useWindowDimensions();
+    const numCols = width >= 1400 ? 6 : width >= 1024 ? 5 : width >= 768 ? 4 : width >= 480 ? 3 : 2;
 
     const loadWatchlist = useCallback(async () => {
         const ids = Storage.get('watchlist', []);
@@ -573,7 +692,7 @@ function WatchlistScreen({ navigation }) {
                 <FlatList
                     data={items}
                     keyExtractor={(item) => item.id}
-                    numColumns={3}
+                    numColumns={numCols}
                     contentContainerStyle={styles.searchGrid}
                     columnWrapperStyle={styles.searchRow}
                     renderItem={({ item }) => (
@@ -596,6 +715,8 @@ function WatchlistScreen({ navigation }) {
 function CountryScreen({ route, navigation }) {
     const parentParam = navigation.getParent()?.getState()?.routes?.find(r => r.name === 'Countries')?.params?.countryKey;
     const initialCountryKey = route?.params?.countryKey || parentParam || 'all';
+    const { width } = useWindowDimensions();
+    const numCols = width >= 1400 ? 6 : width >= 1024 ? 5 : width >= 768 ? 4 : width >= 480 ? 3 : 2;
     const [countries, setCountries] = useState([]);
     const [active, setActive] = useState(initialCountryKey);
     const [items, setItems] = useState([]);
@@ -729,7 +850,7 @@ function CountryScreen({ route, navigation }) {
                 <FlatList
                     data={items}
                     keyExtractor={(item) => item.id}
-                    numColumns={3}
+                    numColumns={numCols}
                     contentContainerStyle={styles.searchGrid}
                     columnWrapperStyle={styles.searchRow}
                     onEndReached={handleLoadMore}
@@ -767,6 +888,8 @@ function GenreScreen({ route, navigation }) {
     const parentParam = navigation.getParent()?.getState()?.routes?.find(r => r.name === 'Genres')?.params?.genre;
     const initialGenre = route?.params?.genre || parentParam || 'Action';
     const [active, setActive] = useState(initialGenre);
+    const { width } = useWindowDimensions();
+    const numCols = width >= 1400 ? 6 : width >= 1024 ? 5 : width >= 768 ? 4 : width >= 480 ? 3 : 2;
     const [items, setItems] = useState([]);
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
@@ -879,7 +1002,7 @@ function GenreScreen({ route, navigation }) {
                 <FlatList
                     data={items}
                     keyExtractor={(item) => item.id}
-                    numColumns={3}
+                    numColumns={numCols}
                     contentContainerStyle={styles.searchGrid}
                     columnWrapperStyle={styles.searchRow}
                     onEndReached={handleLoadMore}
@@ -1090,6 +1213,8 @@ function PlayerScreen({ route, navigation }) {
     const [loading, setLoading] = useState(initialMirrors.length === 0);
     const [error, setError] = useState(null);
     const [inWatchlist, setInWatchlist] = useState(false);
+    const [iframeLoaded, setIframeLoaded] = useState(false);
+    const fallbackTimer = useRef(null);
 
     useEffect(() => {
         setInWatchlist(Storage.get('watchlist', []).includes(item.id));
@@ -1175,15 +1300,44 @@ function PlayerScreen({ route, navigation }) {
 
     const recordProgress = (pct) => {
         const history = Storage.get('history', {});
-        history[item.id] = { pct, ts: Date.now() };
+        const entry = { pct, ts: Date.now(), title: item.title, type: item.type, poster: item.poster, backdrop: item.backdrop, year: item.year, rating: item.rating, sourceName: item.sourceName || item.source, sourceUrl: item.sourceUrl || item.id, tmdbId: item.tmdbId, imdbId: item.imdbId };
+        history[item.id] = entry;
         Storage.set('history', history);
+        Storage.set(`meta_${item.id}`, { id: item.id, ...entry });
     };
 
     useEffect(() => {
         if (!streamUrl) return;
+        setIframeLoaded(false);
         const t = setTimeout(() => recordProgress(15), 8000);
         return () => clearTimeout(t);
     }, [streamUrl]);
+
+    // Auto-advance to next mirror if iframe never loads within 12s
+    useEffect(() => {
+        if (!streamUrl || iframeLoaded) {
+            if (fallbackTimer.current) { clearTimeout(fallbackTimer.current); fallbackTimer.current = null; }
+            return;
+        }
+        if (fallbackTimer.current) clearTimeout(fallbackTimer.current);
+        fallbackTimer.current = setTimeout(() => {
+            if (!iframeLoaded && streamSources.length > 1) {
+                setStreamSources(prev => prev); // ensure closure freshness
+                const nextIdx = (activeSourceIdx + 1) % streamSources.length;
+                if (nextIdx !== activeSourceIdx) {
+                    swapToSource(nextIdx);
+                }
+            }
+        }, 12000);
+        return () => {
+            if (fallbackTimer.current) { clearTimeout(fallbackTimer.current); fallbackTimer.current = null; }
+        };
+    }, [streamUrl, iframeLoaded, activeSourceIdx, streamSources.length]);
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => { if (fallbackTimer.current) { clearTimeout(fallbackTimer.current); fallbackTimer.current = null; } };
+    }, []);
 
     if (loading) {
         return (
@@ -1228,6 +1382,7 @@ function PlayerScreen({ route, navigation }) {
                     <iframe
                         key={streamUrl}
                         src={streamUrl}
+                        onLoad={() => setIframeLoaded(true)}
                         style={{
                             width: '100%',
                             height: '100%',
@@ -1893,6 +2048,18 @@ const styles = StyleSheet.create({
     },
     heroWatchlistIcon: { color: '#fff', fontSize: 16, marginRight: 6, fontWeight: '700' },
     heroWatchlistText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+    heroIndicators: {
+        position: 'absolute', bottom: 12, left: 0, right: 0,
+        flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6
+    },
+    heroDot: {
+        width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.4)', marginHorizontal: 3
+    },
+    heroDotActive: { backgroundColor: COLORS.brand, width: 18 },
+
+    continueWatchingSection: { marginBottom: 16 },
+    continueWatchingList: { paddingHorizontal: 12, paddingRight: 16 },
+    continueWatchingEmpty: { paddingHorizontal: 16, paddingVertical: 8, color: COLORS.textMuted, fontSize: 13 },
 
     categorySection: { marginVertical: 12 },
     categoryHeader: {
@@ -1984,7 +2151,7 @@ const styles = StyleSheet.create({
     posterFallbackText: { color: COLORS.textSecondary, fontSize: 10, textAlign: 'center' },
     posterImage: { width: '100%', height: '100%' },
 
-    playerWrapper: { height: 240, backgroundColor: '#000' },
+    playerWrapper: { width: '100%', aspectRatio: 16 / 9, maxHeight: 720, minHeight: 240, backgroundColor: '#000' },
     iframeFallback: { flex: 1, position: 'relative', justifyContent: 'center', alignItems: 'center' },
     iframeFallbackOverlay: { padding: 20 },
     iframeFallbackText: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center' },
