@@ -104,6 +104,8 @@ function Poster({ url, title, style, badge }) {
                 source={{ uri: imgSrc }}
                 style={[styles.posterImage, StyleSheet.absoluteFill]}
                 resizeMode="cover"
+                fadeDuration={0}
+                progressiveRenderingEnabled={false}
                 onError={handleError}
             />
             {badge && (
@@ -2066,6 +2068,20 @@ function CustomDrawerContent({ navigation, state }) {
             </View>
         </SafeAreaView>
     );
+}
+
+// react-native-web applies opacity:0 to images via a hashed className until onLoad fires.
+// On the web bundle the onLoad handler isn't reliably triggered for cached / cross-origin
+// images, which leaves every poster invisible. Force opacity:1 with a global CSS override.
+if (typeof document !== 'undefined') {
+    const STYLE_ID = '__streamapp_force_img_opacity';
+    if (!document.getElementById(STYLE_ID)) {
+        const el = document.createElement('style');
+        el.id = STYLE_ID;
+        // Target all images inside the Expo/RN root. Exclude the drawer icons (always tiny).
+        el.textContent = '#root img{opacity:1 !important}';
+        document.head.appendChild(el);
+    }
 }
 
 export default function App() {
