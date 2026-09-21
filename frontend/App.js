@@ -84,10 +84,10 @@ function Poster({ url, title, style, badge }) {
     // on top when it loads successfully; when it fails (cross-origin / network / slow),
     // the fallback remains visible underneath and the card is never a black rectangle.
     return (
-        <View style={[style, { width: '100%', overflow: 'hidden', backgroundColor: '#2a2a2a' }]}>
+        <View style={[style, { width: '100%', overflow: 'hidden', backgroundColor: '#3a3a3a' }]}>
             <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', padding: 6 }]}>
-                <Text style={{ fontSize: 32, marginBottom: 6, opacity: 0.5 }}>🎬</Text>
-                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700', textAlign: 'center', opacity: 0.9 }} numberOfLines={2}>
+                <Text style={{ fontSize: 28, marginBottom: 6 }}>🎬</Text>
+                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
                     {title || 'Loading…'}
                 </Text>
             </View>
