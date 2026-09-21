@@ -140,9 +140,9 @@ function MediaCard({ item, onPress, isLarge, showProgress }) {
             onPress={() => onPress(item)}
             activeOpacity={0.85}
         >
-            <View style={styles.cardPoster}>
+            <View style={[styles.cardPoster, { backgroundColor: '#5b21b6', borderWidth: 2, borderColor: '#a855f7' }]}>
                 {/* Always-rendered visible placeholder so the card is never blank */}
-                <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#3a3a3a', padding: 6 }]}>
+                <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', padding: 6 }]}>
                     <Text style={{ fontSize: 28, marginBottom: 6 }}>🎬</Text>
                     <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
                         {item.title || 'Loading…'}
