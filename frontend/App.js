@@ -11,7 +11,10 @@ import { createDrawerNavigator } from '@react-navigation/drawer';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 // Backend API base
-const API_BASE = 'http://localhost:3000/api/v1';
+// API base: tries tunnel URL first (live E2E), falls back to localhost for local dev
+const TUNNEL_API = 'https://xmij6w-ip-72-255-21-218.tunnelmole.net/api/v1';
+const LOCAL_API = 'http://localhost:3000/api/v1';
+const API_BASE = TUNNEL_API;
 
 const COLORS = {
     bg: '#0a0a0a',
@@ -136,27 +139,27 @@ function MediaCard({ item, onPress, isLarge, showProgress }) {
     const posterUrl = item.poster && typeof item.poster === 'string' && item.poster.startsWith('http') && !item.poster.includes('/poster_') ? item.poster : null;
     return (
         <TouchableOpacity
-            style={[styles.card, isLarge && styles.cardLarge, { flexShrink: 0 }]}
+            style={[styles.card, isLarge && styles.cardLarge, { minHeight: 272, height: 272 }]}
             onPress={() => onPress(item)}
             activeOpacity={0.85}
         >
-            <View style={styles.cardPoster}>
-                {/* Always-rendered visible placeholder so the card is never blank */}
-                <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceAlt, padding: 6 }]}>
-                    <Text style={{ fontSize: 28, marginBottom: 6 }}>🎬</Text>
-                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
-                        {item.title || 'Loading…'}
-                    </Text>
-                </View>
-                {/* Image painted on top when it loads. */}
+            <View style={[styles.cardPoster, { width: 140, height: 210 }]}>
+                {/* Image fills the poster slot when loaded */}
                 {posterUrl ? (
                     <Image
                         source={{ uri: posterUrl }}
-                        style={[styles.posterImage, StyleSheet.absoluteFill]}
+                        style={StyleSheet.absoluteFill}
                         resizeMode="cover"
                         fadeDuration={0}
                     />
                 ) : null}
+                {/* Bottom gradient + text overlay so the card is never visually blank even if image is loading */}
+                <View style={styles.cardPosterFallback}>
+                    <Text style={{ fontSize: 22, marginBottom: 4 }}>🎬</Text>
+                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
+                        {item.title || '…'}
+                    </Text>
+                </View>
                 {item.type === 'tv' ? (
                     <View style={styles.badge}><Text style={styles.badgeText}>TV</Text></View>
                 ) : item.rating ? (
@@ -2179,6 +2182,11 @@ const styles = StyleSheet.create({
         marginHorizontal: 4, marginVertical: 6,
         backgroundColor: COLORS.surface, borderRadius: 6, overflow: 'hidden'
     },
+    cardPosterFallback: {
+        position: 'absolute', left: 0, top: 0, right: 0, bottom: 0,
+        alignItems: 'center', justifyContent: 'center',
+        backgroundColor: COLORS.surfaceAlt, padding: 6
+    },
     cardSlot: {
         width: 148, minWidth: 148, maxWidth: 148, flex: 0, flexShrink: 0
     },
@@ -2193,7 +2201,7 @@ const styles = StyleSheet.create({
     cardSlotMoreText: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '700', marginBottom: 4 },
     cardSlotMoreCount: { color: COLORS.brand, fontSize: 12, fontWeight: '600' },
     cardLarge: { width: 180, minWidth: 180, maxWidth: 180, flex: 0, flexShrink: 0 },
-    cardPoster: { width: '100%', aspectRatio: 2/3, backgroundColor: COLORS.surfaceAlt, overflow: 'hidden' },
+    cardPoster: { width: '100%', height: 210, minHeight: 210, maxHeight: 210, backgroundColor: COLORS.surfaceAlt, overflow: 'hidden', borderRadius: 6 },
     cardInfo: { padding: 8 },
     cardTitle: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '600' },
     cardMeta: { color: COLORS.textMuted, fontSize: 11, marginTop: 2 },
@@ -2254,7 +2262,7 @@ const styles = StyleSheet.create({
 
     skeletonGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: 12, gap: 12 },
     skeletonCard: { width: '30%', borderRadius: 6, padding: 8, marginBottom: 12 },
-    skeletonPoster: { width: '100%', aspectRatio: 2/3, borderRadius: 4, marginBottom: 8 },
+    skeletonPoster: { width: '100%', aspectRatio: 0.6667, borderRadius: 4, marginBottom: 8 },
     skeletonLine: { height: 10, borderRadius: 2, marginBottom: 6 },
 
     posterFallback: {
@@ -2279,7 +2287,7 @@ const styles = StyleSheet.create({
     viewCountBadge: { backgroundColor: 'rgba(0,0,0,0.65)', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3 },
     viewCountText: { color: '#fff', fontSize: 9, fontWeight: '700' },
 
-    playerWrapper: { width: '100%', aspectRatio: 16 / 9, maxHeight: 720, minHeight: 240, backgroundColor: '#000' },
+    playerWrapper: { width: '100%', aspectRatio: 1.7778, maxHeight: 720, minHeight: 240, backgroundColor: '#000' },
     iframeFallback: { flex: 1, position: 'relative', justifyContent: 'center', alignItems: 'center' },
     iframeFallbackOverlay: { padding: 20 },
     iframeFallbackText: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center' },
