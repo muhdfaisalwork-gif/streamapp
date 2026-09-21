@@ -133,46 +133,18 @@ function getSourceLabel(item) {
 function MediaCard({ item, onPress, isLarge, showProgress }) {
     const watchProgress = Storage.get(`progress_${item.id}`, 0);
     const isLive = item.sourceOrigin === 'live' || (item.source && item.source !== 'curated' && item.source !== 'MovieBox');
-    const quality = getQuality(item);
-    const sourceLabel = getSourceLabel(item);
-    const viewCount = Storage.get(`views_${item.id}`, 0);
-    const hasSubtitles = !isLive; // curated catalog always ships subs; live sources vary
-    const badges = [];
-    if (quality) badges.push({ key: 'q', style: [styles.qualityBadge, quality.tone === 'gold' ? styles.qualityBadgeGold : quality.tone === 'cyan' ? styles.qualityBadgeCyan : styles.qualityBadgeMuted], text: quality.label });
-    if (hasSubtitles) badges.push({ key: 'cc', style: styles.subtitleBadge, text: 'CC' });
     return (
         <TouchableOpacity
             style={[styles.card, isLarge && styles.cardLarge, { flexShrink: 0 }]}
             onPress={() => onPress(item)}
             activeOpacity={0.85}
         >
-            <View style={styles.cardPoster}>
-                <Poster
-                    url={item.poster}
-                    title={item.title}
-                    style={StyleSheet.absoluteFill}
-                    badge={item.type === 'tv' ? 'TV' : (item.rating ? `★ ${item.rating}` : null)}
-                />
-                {badges.map((b, i) => (
-                    <View key={b.key} style={[styles.posterTopLeft, { top: 6 + i * 18 }]}>
-                        <View style={b.style}><Text style={styles.qualityBadgeText}>{b.text}</Text></View>
-                    </View>
-                ))}
-                {sourceLabel ? (
-                    <View style={styles.posterTopRight}>
-                        <View style={styles.sourceBadge}>
-                            <Text style={styles.sourceBadgeText} numberOfLines={1}>{sourceLabel}</Text>
-                        </View>
-                    </View>
-                ) : null}
-                {viewCount > 0 ? (
-                    <View style={styles.posterBottomLeft}>
-                        <View style={styles.viewCountBadge}>
-                            <Text style={styles.viewCountText}>👁 {viewCount > 999 ? `${(viewCount/1000).toFixed(1)}k` : viewCount}</Text>
-                        </View>
-                    </View>
-                ) : null}
-            </View>
+            <Poster
+                url={item.poster}
+                title={item.title}
+                style={styles.cardPoster}
+                badge={item.type === 'tv' ? 'TV' : (item.rating ? `★ ${item.rating}` : null)}
+            />
             <View style={styles.cardInfo}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <Text style={{ fontSize: 8, color: isLive ? COLORS.success : COLORS.textMuted, marginRight: 4 }}>●</Text>
