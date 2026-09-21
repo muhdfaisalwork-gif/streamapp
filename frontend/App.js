@@ -133,18 +133,36 @@ function getSourceLabel(item) {
 function MediaCard({ item, onPress, isLarge, showProgress }) {
     const watchProgress = Storage.get(`progress_${item.id}`, 0);
     const isLive = item.sourceOrigin === 'live' || (item.source && item.source !== 'curated' && item.source !== 'MovieBox');
+    const posterUrl = item.poster && typeof item.poster === 'string' && item.poster.startsWith('http') && !item.poster.includes('/poster_') ? item.poster : null;
     return (
         <TouchableOpacity
             style={[styles.card, isLarge && styles.cardLarge, { flexShrink: 0 }]}
             onPress={() => onPress(item)}
             activeOpacity={0.85}
         >
-            <Poster
-                url={item.poster}
-                title={item.title}
-                style={styles.cardPoster}
-                badge={item.type === 'tv' ? 'TV' : (item.rating ? `★ ${item.rating}` : null)}
-            />
+            <View style={styles.cardPoster}>
+                {/* Always-rendered visible placeholder so the card is never blank */}
+                <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#3a3a3a', padding: 6 }]}>
+                    <Text style={{ fontSize: 28, marginBottom: 6 }}>🎬</Text>
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700', textAlign: 'center' }} numberOfLines={2}>
+                        {item.title || 'Loading…'}
+                    </Text>
+                </View>
+                {/* Image painted on top when it loads. */}
+                {posterUrl ? (
+                    <Image
+                        source={{ uri: posterUrl }}
+                        style={[styles.posterImage, StyleSheet.absoluteFill]}
+                        resizeMode="cover"
+                        fadeDuration={0}
+                    />
+                ) : null}
+                {item.type === 'tv' ? (
+                    <View style={styles.badge}><Text style={styles.badgeText}>TV</Text></View>
+                ) : item.rating ? (
+                    <View style={styles.badge}><Text style={styles.badgeText}>★ {item.rating}</Text></View>
+                ) : null}
+            </View>
             <View style={styles.cardInfo}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <Text style={{ fontSize: 8, color: isLive ? COLORS.success : COLORS.textMuted, marginRight: 4 }}>●</Text>
