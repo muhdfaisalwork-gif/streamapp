@@ -154,15 +154,17 @@ function CategoryRow({ category, onSelectMedia, onSelectCategory }) {
             <FlatList
                 horizontal
                 data={category.items}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item, idx) => `${item.id}-${idx}`}
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.categoryList}
                 renderItem={({ item }) => (
-                    <MediaCard
-                        item={item}
-                        onPress={onSelectMedia}
-                        showProgress
-                    />
+                    <View style={styles.cardSlot}>
+                        <MediaCard
+                            item={item}
+                            onPress={onSelectMedia}
+                            showProgress
+                        />
+                    </View>
                 )}
             />
         </View>
@@ -1892,10 +1894,14 @@ const styles = StyleSheet.create({
     categoryList: { paddingHorizontal: 12, paddingRight: 16 },
 
     card: {
-        width: 140, marginHorizontal: 4, marginVertical: 6,
+        width: 140, minWidth: 140, maxWidth: 140, flex: 0, flexShrink: 0,
+        marginHorizontal: 4, marginVertical: 6,
         backgroundColor: COLORS.surface, borderRadius: 6, overflow: 'hidden'
     },
-    cardLarge: { width: 180 },
+    cardSlot: {
+        width: 148, minWidth: 148, maxWidth: 148, flex: 0, flexShrink: 0
+    },
+    cardLarge: { width: 180, minWidth: 180, maxWidth: 180, flex: 0, flexShrink: 0 },
     cardPoster: { width: '100%', aspectRatio: 2/3, backgroundColor: COLORS.surfaceAlt },
     cardInfo: { padding: 8 },
     cardTitle: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '600' },
