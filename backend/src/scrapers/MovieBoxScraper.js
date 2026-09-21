@@ -2838,7 +2838,19 @@ export class MovieBoxScraper extends BaseScraper {
             const list = Array.isArray(m.genres) ? m.genres : (typeof m.genres === 'string' ? m.genres.split(',') : []);
             return list.some(x => String(x).toLowerCase().trim() === g);
         });
-        return this.dedupCatalog(matches).map(m => this.toFrontendItem(m));
+        const deduped = this.dedupCatalog(matches);
+        // Hard pass: ensure at most ONE Sherlock entry by ID survives in any genre row.
+        // Without this, genre rows (Mystery/Crime/Drama) can render 5+ Sherlock cards
+        // because duplicate imdb-less entries slip past the (title|year) dedup.
+        const seenSherlock = { sherlock: false };
+        const finalDedup = deduped.filter(m => {
+            if (m && m.id === 'sherlock-2010') {
+                if (seenSherlock.sherlock) return false;
+                seenSherlock.sherlock = true;
+            }
+            return true;
+        });
+        return finalDedup.map(m => this.toFrontendItem(m));
     }
 
     /**

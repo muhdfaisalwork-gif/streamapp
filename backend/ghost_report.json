@@ -1,0 +1,107 @@
+{
+  "hollywood": {
+    "total": 76,
+    "real": 76,
+    "ghosts": []
+  },
+  "bollywood": {
+    "total": 60,
+    "real": 60,
+    "ghosts": []
+  },
+  "pakistani": {
+    "total": 10,
+    "real": 10,
+    "ghosts": []
+  },
+  "korean": {
+    "total": 20,
+    "real": 20,
+    "ghosts": []
+  },
+  "japanese": {
+    "total": 32,
+    "real": 32,
+    "ghosts": []
+  },
+  "chinese": {
+    "total": 8,
+    "real": 8,
+    "ghosts": []
+  },
+  "british": {
+    "total": 20,
+    "real": 20,
+    "ghosts": []
+  },
+  "french": {
+    "total": 3,
+    "real": 3,
+    "ghosts": []
+  },
+  "italian": {
+    "total": 5,
+    "real": 5,
+    "ghosts": []
+  },
+  "spanish": {
+    "total": 4,
+    "real": 4,
+    "ghosts": []
+  },
+  "german": {
+    "total": 1,
+    "real": 1,
+    "ghosts": []
+  },
+  "animation": {
+    "total": 37,
+    "real": 37,
+    "ghosts": []
+  },
+  "horror": {
+    "total": 19,
+    "real": 19,
+    "ghosts": []
+  },
+  "thriller": {
+    "total": 24,
+    "real": 24,
+    "ghosts": []
+  },
+  "documentary": {
+    "total": 4,
+    "real": 4,
+    "ghosts": []
+  },
+  "music": {
+    "total": 5,
+    "real": 5,
+    "ghosts": []
+  },
+  "classic": {
+    "total": 10,
+    "real": 10,
+    "ghosts": []
+  },
+  "scifi": {
+    "total": 19,
+    "real": 19,
+    "ghosts": []
+  },
+  "romance": {
+    "total": 13,
+    "real": 13,
+    "ghosts": []
+  },
+  "family": {
+    "total": 19,
+    "real": 19,
+    "ghosts": []
+  },
+  "superhero": {
+    "total": 14,
+    "real": 14,
+    "ghosts": []
+  }
+}

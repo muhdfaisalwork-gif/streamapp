@@ -89,7 +89,7 @@ function Poster({ url, title, style, badge }) {
         );
     }
     return (
-        <View style={style}>
+        <View style={[style, { width: '100%', overflow: 'hidden' }]}>
             <Image
                 source={{ uri: imgSrc }}
                 style={[styles.posterImage, StyleSheet.absoluteFill]}
@@ -111,7 +111,7 @@ function MediaCard({ item, onPress, isLarge, showProgress }) {
     const isLive = item.sourceOrigin === 'live' || (item.source && item.source !== 'curated' && item.source !== 'MovieBox');
     return (
         <TouchableOpacity
-            style={[styles.card, isLarge && styles.cardLarge]}
+            style={[styles.card, isLarge && styles.cardLarge, { flexShrink: 0 }]}
             onPress={() => onPress(item)}
             activeOpacity={0.85}
         >
@@ -1643,12 +1643,20 @@ function CustomDrawerContent({ navigation, state }) {
         const checkLive = () => {
             fetch(`${API_BASE}/health`)
                 .then(r => r.json())
-                .then(j => setLiveStatus({
-                    liveAvailable: j.liveAvailable === true,
-                    liveTitlesCached: j.liveTitlesCached || 0,
-                    totalUniqueTitles: j.totalUniqueTitles || 0,
-                    curatedTitles: Math.max(0, (j.totalUniqueTitles || 0) - (j.liveTitlesCached || 0))
-                }))
+                .then(j => {
+                    const liveUp = j.liveAvailable === true;
+                    // When live is DOWN, force liveTitlesCached=0 and curatedTitles=totalUniqueTitles
+                    // so the status pill doesn't lie about cached live titles.
+                    // When live comes back UP, the next /health fetch will populate liveTitlesCached.
+                    setLiveStatus({
+                        liveAvailable: liveUp,
+                        liveTitlesCached: liveUp ? (j.liveTitlesCached || 0) : 0,
+                        totalUniqueTitles: j.totalUniqueTitles || 0,
+                        curatedTitles: liveUp
+                            ? Math.max(0, (j.totalUniqueTitles || 0) - (j.liveTitlesCached || 0))
+                            : (j.totalUniqueTitles || 0)
+                    });
+                })
                 .catch(() => setLiveStatus({ liveAvailable: false, liveTitlesCached: 0, totalUniqueTitles: 0, curatedTitles: 0 }));
         };
         checkLive();
@@ -1902,7 +1910,7 @@ const styles = StyleSheet.create({
         width: 148, minWidth: 148, maxWidth: 148, flex: 0, flexShrink: 0
     },
     cardLarge: { width: 180, minWidth: 180, maxWidth: 180, flex: 0, flexShrink: 0 },
-    cardPoster: { width: '100%', aspectRatio: 2/3, backgroundColor: COLORS.surfaceAlt },
+    cardPoster: { width: '100%', aspectRatio: 2/3, backgroundColor: COLORS.surfaceAlt, overflow: 'hidden' },
     cardInfo: { padding: 8 },
     cardTitle: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '600' },
     cardMeta: { color: COLORS.textMuted, fontSize: 11, marginTop: 2 },
