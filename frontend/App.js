@@ -12,7 +12,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 // Backend API base
 // API base: tries tunnel URL first (live E2E), falls back to localhost for local dev
-const TUNNEL_API = 'https://xmij6w-ip-72-255-21-218.tunnelmole.net/api/v1';
+const TUNNEL_API = 'https://siqqm9-ip-72-255-21-218.tunnelmole.net/api/v1';
 const LOCAL_API = 'http://localhost:3000/api/v1';
 const API_BASE = TUNNEL_API;
 
