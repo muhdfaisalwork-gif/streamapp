@@ -71,7 +71,7 @@ const Storage = {
 // =================== POSTER (with error fallback) ===================
 const DEFAULT_FALLBACK_POSTER = 'https://image.tmdb.org/t/p/w500/7WTsnHkbA0FaG6R9twfFde0I9hl.jpg';
 
-function Poster({ url, title, style, badge, topLeft, topRight, bottomLeft }) {
+function Poster({ url, title, style, badge }) {
     const validInitial = url && typeof url === 'string' && url.startsWith('http') && !url.includes('/poster_') ? url : DEFAULT_FALLBACK_POSTER;
     const [imgSrc, setImgSrc] = useState(validInitial);
     const [failedAll, setFailedAll] = useState(false);
@@ -111,15 +111,6 @@ function Poster({ url, title, style, badge, topLeft, topRight, bottomLeft }) {
                     <Text style={styles.badgeText}>{badge}</Text>
                 </View>
             )}
-            {topLeft && (
-                <View style={styles.posterTopLeft}>{topLeft}</View>
-            )}
-            {topRight && (
-                <View style={styles.posterTopRight}>{topRight}</View>
-            )}
-            {bottomLeft && (
-                <View style={styles.posterBottomLeft}>{bottomLeft}</View>
-            )}
         </View>
     );
 }
@@ -152,46 +143,42 @@ function MediaCard({ item, onPress, isLarge, showProgress }) {
     const sourceLabel = getSourceLabel(item);
     const viewCount = Storage.get(`views_${item.id}`, 0);
     const hasSubtitles = !isLive; // curated catalog always ships subs; live sources vary
+    const badges = [];
+    if (quality) badges.push({ key: 'q', style: [styles.qualityBadge, quality.tone === 'gold' ? styles.qualityBadgeGold : quality.tone === 'cyan' ? styles.qualityBadgeCyan : styles.qualityBadgeMuted], text: quality.label });
+    if (hasSubtitles) badges.push({ key: 'cc', style: styles.subtitleBadge, text: 'CC' });
     return (
         <TouchableOpacity
             style={[styles.card, isLarge && styles.cardLarge, { flexShrink: 0 }]}
             onPress={() => onPress(item)}
             activeOpacity={0.85}
         >
-            <Poster
-                url={item.poster}
-                title={item.title}
-                style={styles.cardPoster}
-                badge={item.type === 'tv' ? 'TV' : (item.rating ? `★ ${item.rating}` : null)}
-                topLeft={
-                    <View style={{ flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                        {quality && (
-                            <View style={[styles.qualityBadge, quality.tone === 'gold' ? styles.qualityBadgeGold : quality.tone === 'cyan' ? styles.qualityBadgeCyan : styles.qualityBadgeMuted]}>
-                                <Text style={styles.qualityBadgeText}>{quality.label}</Text>
-                            </View>
-                        )}
-                        {hasSubtitles && (
-                            <View style={styles.subtitleBadge}>
-                                <Text style={styles.subtitleBadgeText}>CC</Text>
-                            </View>
-                        )}
+            <View style={styles.cardPoster}>
+                <Poster
+                    url={item.poster}
+                    title={item.title}
+                    style={StyleSheet.absoluteFill}
+                    badge={item.type === 'tv' ? 'TV' : (item.rating ? `★ ${item.rating}` : null)}
+                />
+                {badges.map((b, i) => (
+                    <View key={b.key} style={[styles.posterTopLeft, { top: 6 + i * 18 }]}>
+                        <View style={b.style}><Text style={styles.qualityBadgeText}>{b.text}</Text></View>
                     </View>
-                }
-                topRight={
-                    sourceLabel ? (
+                ))}
+                {sourceLabel ? (
+                    <View style={styles.posterTopRight}>
                         <View style={styles.sourceBadge}>
                             <Text style={styles.sourceBadgeText} numberOfLines={1}>{sourceLabel}</Text>
                         </View>
-                    ) : null
-                }
-                bottomLeft={
-                    viewCount > 0 ? (
+                    </View>
+                ) : null}
+                {viewCount > 0 ? (
+                    <View style={styles.posterBottomLeft}>
                         <View style={styles.viewCountBadge}>
                             <Text style={styles.viewCountText}>👁 {viewCount > 999 ? `${(viewCount/1000).toFixed(1)}k` : viewCount}</Text>
                         </View>
-                    ) : null
-                }
-            />
+                    </View>
+                ) : null}
+            </View>
             <View style={styles.cardInfo}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <Text style={{ fontSize: 8, color: isLive ? COLORS.success : COLORS.textMuted, marginRight: 4 }}>●</Text>
@@ -2257,7 +2244,7 @@ const styles = StyleSheet.create({
     posterFallbackIcon: { fontSize: 28, marginBottom: 4 },
     posterFallbackText: { color: COLORS.textSecondary, fontSize: 10, textAlign: 'center' },
     posterImage: { width: '100%', height: '100%' },
-    posterTopLeft: { position: 'absolute', top: 6, left: 6, flexDirection: 'column', gap: 4, alignItems: 'flex-start' },
+    posterTopLeft: { position: 'absolute', left: 6 },
     posterTopRight: { position: 'absolute', top: 6, right: 6, maxWidth: '60%' },
     posterBottomLeft: { position: 'absolute', bottom: 6, left: 6 },
     qualityBadge: { paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3 },
