@@ -1,0 +1,23 @@
+{
+  "name": "streamapp-launcher",
+  "version": "2.0.0",
+  "description": "StreamApp Windows launcher — opens the deployed web app in the default browser and adds itself to the Windows Startup group.",
+  "bin": "streamapp-launcher.js",
+  "main": "streamapp-launcher.js",
+  "scripts": {
+    "build": "pkg . --targets node18-win-x64 --output dist/StreamApp.exe",
+    "build-arm64": "pkg . --targets node18-win-arm64 --output dist/StreamApp-arm64.exe"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "scripts": [
+      "streamapp-launcher.js"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ],
+    "outputPath": "dist"
+  }
+}

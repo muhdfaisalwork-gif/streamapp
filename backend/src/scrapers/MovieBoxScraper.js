@@ -2828,7 +2828,7 @@ export class MovieBoxScraper extends BaseScraper {
                     imdb === q;
             })
             : all;
-        return matches.map(m => this.toFrontendItem(m));
+        return this.dedupCatalog(matches).map(m => this.toFrontendItem(m));
     }
 
     async browseByGenre(genre) {
@@ -2838,7 +2838,29 @@ export class MovieBoxScraper extends BaseScraper {
             const list = Array.isArray(m.genres) ? m.genres : (typeof m.genres === 'string' ? m.genres.split(',') : []);
             return list.some(x => String(x).toLowerCase().trim() === g);
         });
-        return matches.map(m => this.toFrontendItem(m));
+        return this.dedupCatalog(matches).map(m => this.toFrontendItem(m));
+    }
+
+    /**
+     * Dedup the curated catalog. Two passes:
+     *  1) prefer imdbId — many titles are listed under different ids but same imdb.
+     *  2) fall back to (title-lowercased + year) — exact match is the same title.
+     * The first occurrence wins (catalog is in approximate priority order).
+     */
+    dedupCatalog(items) {
+        const seen = new Set();
+        const out = [];
+        for (const m of items) {
+            if (!m) continue;
+            const imdb = (m.imdbId || '').toLowerCase();
+            const title = (m.title || '').toLowerCase().trim();
+            const year = m.year || 0;
+            const key = imdb ? `i:${imdb}` : `t:${title}|${year}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push(m);
+        }
+        return out;
     }
 
     async getTvEpisodes(tmdbId, season) {

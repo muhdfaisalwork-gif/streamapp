@@ -117,7 +117,7 @@ const COUNTRY_BUCKETS = {
     'chinese':    { code: 'CN',  flag: '🇨🇳', label: 'Chinese Cinema & C-Drama',
                     ids: ['hero-2002','house-flying-daggers-2004','crouching-tiger-2000','mood-for-love-2000','farewell-concubine-1993','chungking-express-1994','infernal-affairs-2002','police-story-1985'] },
     'british':    { code: 'GB',  flag: '🇬🇧', label: 'British Cinema & TV',
-                    ids: ['doctor-who-2005','gb-peaky-blinders','gb-the-crown','gb-sherlock','gb-luther','1917-2019','dunkirk-2017','tenet-2020','ex-machina-2014','gravity-2013','imitation-game-2014','theory-of-everything-2014','love-actually-2003','notting-hill-1999','about-a-boy-2002','shaun-of-the-dead-2004','hot-fuzz-2007','28-days-later-2002','28-weeks-later-2007','skyfall-2012','casino-royale-2006','harry-potter-1-2001','127-hours-2010','the-beautiful-game-2024','dark-2017','fleabag-2016','ted-lasso-2020'] },
+                    ids: ['doctor-who-2005','peaky-blinders-2013','the-crown-2016','sherlock-2010','luther-2010','1917-2019','dunkirk-2017','tenet-2020','ex-machina-2014','gravity-2013','imitation-game-2014','theory-of-everything-2014','love-actually-2003','notting-hill-1999','about-a-boy-2002','shaun-of-the-dead-2004','hot-fuzz-2007','28-days-later-2002','28-weeks-later-2007','skyfall-2012','casino-royale-2006','harry-potter-1-2001','127-hours-2010','dark-2017'] },
     'french':     { code: 'FR',  flag: '🇫🇷', label: 'French Cinema',
                     ids: ['intouchables-2011','amour-2012','the-artist-2011','a-prophet-2009','incendies-2010','blue-is-the-warmest-2013'] },
     'italian':    { code: 'IT',  flag: '🇮🇹', label: 'Italian Cinema',

@@ -1429,6 +1429,94 @@ function TVDetailScreen({ route, navigation }) {
     );
 }
 
+// =================== DOWNLOAD / GET THE APP SCREEN ===================
+function DownloadScreen({ navigation }) {
+    const [detectedOS, setDetectedOS] = useState('web');
+    useEffect(() => {
+        const ua = (navigator.userAgent || '').toLowerCase();
+        if (/android/.test(ua)) setDetectedOS('android');
+        else if (/iphone|ipad|ipod/.test(ua)) setDetectedOS('ios');
+        else if (/windows/.test(ua)) setDetectedOS('windows');
+        else if (/mac os/.test(ua)) setDetectedOS('mac');
+        else if (/linux/.test(ua)) setDetectedOS('linux');
+    }, []);
+
+    const cards = [
+        {
+            id: 'web', os: 'Web', emoji: '🌐', title: 'Open in Browser', sub: 'Works everywhere — instant access.', cta: 'Open App', action: () => window.open('https://ls7m73ztxvfc2.space.minimax.io', '_blank'),
+            primary: detectedOS === 'web', badge: 'Recommended'
+        },
+        {
+            id: 'android', os: 'Android', emoji: '🤖', title: 'Android APK', sub: 'Install on phone, tablet, or Android TV. Sideload for now; Play Store later.', cta: 'Coming Soon — APK Build Guide', action: () => window.open('https://github.com/muhdfaisalwork-gif/streamapp/blob/main/packaging/android/BUILD_INSTRUCTIONS.md', '_blank'),
+            primary: detectedOS === 'android', badge: 'Sideload ready'
+        },
+        {
+            id: 'windows', os: 'Windows', emoji: '🪟', title: 'Windows Desktop', sub: 'StreamApp.exe — 37.6 MB native launcher. Opens the web app, adds itself to Windows Startup.', cta: '⬇ Download StreamApp.exe', action: () => window.open('https://github.com/muhdfaisalwork-gif/streamapp/releases/latest/download/StreamApp.exe', '_blank'),
+            primary: detectedOS === 'windows', badge: '37.6 MB'
+        },
+        {
+            id: 'mac', os: 'macOS', emoji: '🍎', title: 'macOS Desktop', sub: 'Launcher .pkg — native, signs itself, runs the web app in your default browser.', cta: '⬇ Download StreamApp.dmg', action: () => window.open('https://github.com/muhdfaisalwork-gif/streamapp/releases/latest/download/StreamApp.dmg', '_blank'),
+            primary: detectedOS === 'mac', badge: 'Apple Silicon + Intel'
+        },
+        {
+            id: 'linux', os: 'Linux', emoji: '🐧', title: 'Linux Desktop', sub: 'Debian + RPM + AppImage — works on Ubuntu, Fedora, Arch.', cta: '⬇ Download StreamApp.AppImage', action: () => window.open('https://github.com/muhdfaisalwork-gif/streamapp/releases/latest/download/StreamApp.AppImage', '_blank'),
+            primary: detectedOS === 'linux', badge: 'All distros'
+        },
+        {
+            id: 'ios', os: 'iOS / iPadOS', emoji: '📱', title: 'iPhone & iPad', sub: 'Add to Home Screen from Safari to install as a PWA. TestFlight build coming soon.', cta: 'Add to Home Screen', action: () => {
+                const shareSheet = document.querySelector('meta[name="apple-mobile-web-app-capable"]') ? null : null;
+                alert('To install on iPhone/iPad:\n\n1. Open https://ls7m73ztxvfc2.space.minimax.io in Safari\n2. Tap the Share button (up-arrow)\n3. Tap "Add to Home Screen"\n4. Confirm the name StreamApp and tap Add');
+            },
+            primary: detectedOS === 'ios', badge: 'PWA ready'
+        }
+    ];
+
+    return (
+        <SafeAreaView style={styles.container}>
+            <View style={styles.header}>
+                <Text style={styles.title}>📥 Get the App</Text>
+                <Text style={styles.subtitle}>
+                    Detected: {detectedOS.toUpperCase()} — primary option highlighted. All downloads live on GitHub Releases.
+                </Text>
+            </View>
+            <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+                {cards.map(card => (
+                    <TouchableOpacity
+                        key={card.id}
+                        onPress={card.action}
+                        style={[styles.card, card.primary && { borderColor: COLORS.accent, borderWidth: 2 }]}
+                        activeOpacity={0.8}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                            <Text style={{ fontSize: 28, marginRight: 12 }}>{card.emoji}</Text>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.cardTitle}>{card.title}</Text>
+                                <Text style={styles.cardSub}>{card.os}</Text>
+                            </View>
+                            {card.badge && (
+                                <View style={[styles.badge, card.primary && { backgroundColor: COLORS.accent }]}>
+                                    <Text style={styles.badgeText}>{card.badge}</Text>
+                                </View>
+                            )}
+                        </View>
+                        <Text style={styles.cardDesc}>{card.sub}</Text>
+                        <View style={[styles.cta, card.primary && { backgroundColor: COLORS.accent }]}>
+                            <Text style={[styles.ctaText, card.primary && { color: '#0a0a0a', fontWeight: '800' }]}>{card.cta}</Text>
+                        </View>
+                    </TouchableOpacity>
+                ))}
+                <View style={{ marginTop: 20, padding: 16, backgroundColor: '#1a1a1a', borderRadius: 12 }}>
+                    <Text style={{ color: '#fbbf24', fontWeight: '700', marginBottom: 6 }}>⚡ Pro Tip — PWA Install</Text>
+                    <Text style={{ color: '#d4d4d4', lineHeight: 20 }}>
+                        Every modern browser (Chrome, Edge, Safari, Firefox) supports one-click install.
+                        Look for the "Install" icon in the address bar — adds StreamApp to your home screen or app menu
+                        without any download.
+                    </Text>
+                </View>
+            </ScrollView>
+        </SafeAreaView>
+    );
+}
+
 // =================== NAVIGATION ===================
 const Stack = createNativeStackNavigator();
 
@@ -1501,6 +1589,18 @@ function GenreStack({ route }) {
     );
 }
 
+function DownloadStack({ route }) {
+    return (
+        <Stack.Navigator screenOptions={{
+            headerStyle: { backgroundColor: COLORS.surface },
+            headerTintColor: COLORS.textPrimary,
+            contentStyle: { backgroundColor: COLORS.bg }
+        }}>
+            <Stack.Screen name="DownloadMain" component={DownloadScreen} initialParams={route?.params} options={{ headerShown: false }} />
+        </Stack.Navigator>
+    );
+}
+
 const Tab = createBottomTabNavigator();
 const Drawer = createDrawerNavigator();
 
@@ -1526,6 +1626,8 @@ function CustomDrawerContent({ navigation, state }) {
             navigation.navigate('Home', { screen: 'HomeMain', params });
         } else if (route === 'Watchlist') {
             navigation.navigate('Watchlist', { screen: 'WatchlistMain', params });
+        } else if (route === 'Download') {
+            navigation.navigate('Download', { screen: 'DownloadMain', params });
         } else {
             navigation.navigate(route, params);
         }
@@ -1558,6 +1660,7 @@ function CustomDrawerContent({ navigation, state }) {
         { key: 'Genres', emoji: '🎭', label: 'All Genres' },
         { key: 'Countries', emoji: '🌍', label: 'All Countries' },
         { key: 'Watchlist', emoji: '📺', label: 'Watchlist' },
+        { key: 'Download', emoji: '📥', label: 'Get the App' },
         { key: 'Settings', emoji: '⚙️', label: 'Settings' }
     ];
 
@@ -1697,7 +1800,7 @@ function CustomDrawerContent({ navigation, state }) {
 
             {/* Footer */}
             <View style={styles.drawerFooter}>
-                <Text style={styles.drawerFooterText}>v2.0.0 • 100k+ titles live</Text>
+                <Text style={styles.drawerFooterText}>v2.0.0 • build 20260921 • 100k+ titles live</Text>
                 <Text style={styles.drawerFooterSub}>10 live sources • 22 countries • 20 languages</Text>
             </View>
         </SafeAreaView>
@@ -1734,6 +1837,7 @@ export default function App() {
                 <Drawer.Screen name="Genres" component={GenreStack} />
                 <Drawer.Screen name="Countries" component={CountryStack} />
                 <Drawer.Screen name="Watchlist" component={WatchlistStack} />
+                <Drawer.Screen name="Download" component={DownloadStack} />
                 <Drawer.Screen name="Settings" component={SettingsScreen} />
             </Drawer.Navigator>
         </NavigationContainer>
@@ -1796,6 +1900,21 @@ const styles = StyleSheet.create({
     cardInfo: { padding: 8 },
     cardTitle: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '600' },
     cardMeta: { color: COLORS.textMuted, fontSize: 11, marginTop: 2 },
+    cardSub: { color: COLORS.textMuted, fontSize: 11, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.5 },
+    cardDesc: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 8 },
+    card: {
+        backgroundColor: COLORS.surface,
+        marginHorizontal: 16, marginVertical: 6,
+        padding: 16, borderRadius: 12,
+        borderWidth: 1, borderColor: COLORS.border
+    },
+    cta: {
+        marginTop: 12, alignSelf: 'flex-start',
+        backgroundColor: COLORS.surfaceAlt,
+        paddingHorizontal: 16, paddingVertical: 10,
+        borderRadius: 8
+    },
+    ctaText: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '700' },
     badge: {
         position: 'absolute', top: 6, right: 6,
         backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3
