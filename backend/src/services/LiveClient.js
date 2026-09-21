@@ -64,6 +64,29 @@ export class LiveClient {
         return false;
     }
 
+    async byId(id) {
+        if (!id) return null;
+        const cacheKey = `byId:${id}`;
+        const cached = this.cache.get(cacheKey);
+        if (cached && Date.now() - cached.ts < this.cacheTtlMs) return cached.data;
+        const isUp = await this.probe();
+        if (!isUp) return null;
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 3500);
+        try {
+            const res = await fetch(`${this.baseUrl}/title/${encodeURIComponent(id)}`, { signal: controller.signal });
+            if (!res.ok) return null;
+            const data = await res.json();
+            const result = (data && (data.title || data.results)) ? (data.title || (Array.isArray(data.results) ? data.results[0] : null)) : null;
+            if (result) this.cache.set(cacheKey, { ts: Date.now(), data: result });
+            return result;
+        } catch (_) {
+            return null;
+        } finally {
+            clearTimeout(t);
+        }
+    }
+
     async search({ q = '', genre = '', country = '', language = '', page = 1, pageSize = 50 } = {}) {
         const cacheKey = `search:${q}:${genre}:${country}:${language}:${page}:${pageSize}`;
         const cached = this.cache.get(cacheKey);

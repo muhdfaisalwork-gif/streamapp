@@ -49,6 +49,16 @@ const Storage = {
             }
         } catch (e) { /* ignore */ }
     },
+    bump(key, by = 1) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                const cur = Number(window.localStorage.getItem(key) || 0) + by;
+                window.localStorage.setItem(key, String(cur));
+                return cur;
+            }
+        } catch (e) { /* ignore */ }
+        return 0;
+    },
     remove(key) {
         try {
             if (typeof window !== 'undefined' && window.localStorage) {
@@ -61,7 +71,7 @@ const Storage = {
 // =================== POSTER (with error fallback) ===================
 const DEFAULT_FALLBACK_POSTER = 'https://image.tmdb.org/t/p/w500/7WTsnHkbA0FaG6R9twfFde0I9hl.jpg';
 
-function Poster({ url, title, style, badge }) {
+function Poster({ url, title, style, badge, topLeft, topRight, bottomLeft }) {
     const validInitial = url && typeof url === 'string' && url.startsWith('http') && !url.includes('/poster_') ? url : DEFAULT_FALLBACK_POSTER;
     const [imgSrc, setImgSrc] = useState(validInitial);
     const [failedAll, setFailedAll] = useState(false);
@@ -101,14 +111,47 @@ function Poster({ url, title, style, badge }) {
                     <Text style={styles.badgeText}>{badge}</Text>
                 </View>
             )}
+            {topLeft && (
+                <View style={styles.posterTopLeft}>{topLeft}</View>
+            )}
+            {topRight && (
+                <View style={styles.posterTopRight}>{topRight}</View>
+            )}
+            {bottomLeft && (
+                <View style={styles.posterBottomLeft}>{bottomLeft}</View>
+            )}
         </View>
     );
 }
 
-// =================== MEDIA CARD ===================
+// Pick the best available embed quality from a catalog entry (4K > 1080p > 720p)
+function getQuality(item) {
+    const streams = Array.isArray(item?.streams) ? item.streams : [];
+    for (const s of streams) {
+        const q = (s?.quality || '').toString();
+        if (q.includes('4K') || q.includes('2160')) return { label: '4K', tone: 'gold' };
+        if (q.includes('1080')) return { label: 'HD', tone: 'cyan' };
+    }
+    if (item?.type === 'tv') return { label: 'TV', tone: 'muted' };
+    return null;
+}
+
+function getSourceLabel(item) {
+    const streams = Array.isArray(item?.streams) ? item.streams : [];
+    const first = streams[0];
+    if (first && first.label) return first.label;
+    if (item.sourceName) return item.sourceName;
+    if (item.sourceOrigin === 'live') return 'Live';
+    return null;
+}
+
 function MediaCard({ item, onPress, isLarge, showProgress }) {
     const watchProgress = Storage.get(`progress_${item.id}`, 0);
     const isLive = item.sourceOrigin === 'live' || (item.source && item.source !== 'curated' && item.source !== 'MovieBox');
+    const quality = getQuality(item);
+    const sourceLabel = getSourceLabel(item);
+    const viewCount = Storage.get(`views_${item.id}`, 0);
+    const hasSubtitles = !isLive; // curated catalog always ships subs; live sources vary
     return (
         <TouchableOpacity
             style={[styles.card, isLarge && styles.cardLarge, { flexShrink: 0 }]}
@@ -120,6 +163,34 @@ function MediaCard({ item, onPress, isLarge, showProgress }) {
                 title={item.title}
                 style={styles.cardPoster}
                 badge={item.type === 'tv' ? 'TV' : (item.rating ? `★ ${item.rating}` : null)}
+                topLeft={
+                    <View style={{ flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                        {quality && (
+                            <View style={[styles.qualityBadge, quality.tone === 'gold' ? styles.qualityBadgeGold : quality.tone === 'cyan' ? styles.qualityBadgeCyan : styles.qualityBadgeMuted]}>
+                                <Text style={styles.qualityBadgeText}>{quality.label}</Text>
+                            </View>
+                        )}
+                        {hasSubtitles && (
+                            <View style={styles.subtitleBadge}>
+                                <Text style={styles.subtitleBadgeText}>CC</Text>
+                            </View>
+                        )}
+                    </View>
+                }
+                topRight={
+                    sourceLabel ? (
+                        <View style={styles.sourceBadge}>
+                            <Text style={styles.sourceBadgeText} numberOfLines={1}>{sourceLabel}</Text>
+                        </View>
+                    ) : null
+                }
+                bottomLeft={
+                    viewCount > 0 ? (
+                        <View style={styles.viewCountBadge}>
+                            <Text style={styles.viewCountText}>👁 {viewCount > 999 ? `${(viewCount/1000).toFixed(1)}k` : viewCount}</Text>
+                        </View>
+                    ) : null
+                }
             />
             <View style={styles.cardInfo}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -259,6 +330,7 @@ function HomeScreen({ navigation }) {
     const [refreshing, setRefreshing] = useState(false);
     const [continueWatching, setContinueWatching] = useState([]);
 
+    const [topImdb, setTopImdb] = useState([]);
     const loadHome = useCallback(async () => {
         try {
             const res = await fetch(`${API_BASE}/categories`);
@@ -289,6 +361,17 @@ function HomeScreen({ navigation }) {
             setLoading(false);
             setRefreshing(false);
         }
+        // Top IMDb row (independent of categories — falls back silently on failure)
+        try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 3000);
+            const r = await fetch(`${API_BASE}/top-imdb?limit=12`, { signal: ctrl.signal });
+            clearTimeout(t);
+            if (r.ok) {
+                const j = await r.json();
+                setTopImdb(j.results || []);
+            }
+        } catch (_) { /* ignore — Top IMDb is a nice-to-have row */ }
     }, []);
 
     useEffect(() => { loadHome(); }, [loadHome]);
@@ -303,22 +386,23 @@ function HomeScreen({ navigation }) {
                 .sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0))
                 .slice(0, 10);
             if (entries.length === 0) { setContinueWatching([]); return; }
-            // Hydrate any entries missing metadata by searching the backend
-            const needsFetch = entries.filter(e => !e.title);
-            if (needsFetch.length > 0) {
+            // Hydrate any entries missing metadata via the by-id endpoint — direct lookup
+            // (avoids /search?q= failing for live-streamed titles with no searchable text).
+            const hydrated = await Promise.all(entries.map(async (e) => {
+                if (e.title && e.poster) return e;
                 try {
-                    const params = new URLSearchParams();
-                    params.set('q', entries[0]?.title || '');
-                    const res = await fetch(`${API_BASE}/search?${params}`);
-                    const data = await res.json();
-                    const byId = {};
-                    (data.results || []).forEach(r => { if (r && r.id) byId[r.id] = r; });
-                    for (let i = 0; i < entries.length; i++) {
-                        if (!entries[i].title && byId[entries[i].id]) entries[i] = { ...byId[entries[i].id], pct: entries[i].pct, ts: entries[i].ts };
+                    const ctrl = new AbortController();
+                    const t = setTimeout(() => ctrl.abort(), 2500);
+                    const res = await fetch(`${API_BASE}/media/${encodeURIComponent(e.id)}`, { signal: ctrl.signal });
+                    clearTimeout(t);
+                    if (res.ok) {
+                        const full = await res.json();
+                        return { ...full, pct: e.pct, ts: e.ts };
                     }
                 } catch (_) { /* ignore */ }
-            }
-            setContinueWatching(entries);
+                return e;
+            }));
+            setContinueWatching(hydrated);
         } catch (err) {
             console.error('Continue Watching load failed:', err);
         }
@@ -441,6 +525,27 @@ function HomeScreen({ navigation }) {
                                         }}
                                         showProgress
                                     />
+                                </View>
+                            )}
+                        />
+                    </View>
+                )}
+
+                {topImdb.length > 0 && (
+                    <View style={styles.categorySection}>
+                        <View style={styles.categoryHeader}>
+                            <Text style={styles.categoryTitle}>★ Top IMDb</Text>
+                            <Text style={styles.categoryMeta}>{topImdb.length} titles ›</Text>
+                        </View>
+                        <FlatList
+                            horizontal
+                            data={topImdb}
+                            keyExtractor={(item, idx) => `${item.id}-${idx}`}
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.categoryList}
+                            renderItem={({ item }) => (
+                                <View style={styles.cardSlot}>
+                                    <MediaCard item={item} onPress={onSelectMedia} />
                                 </View>
                             )}
                         />
@@ -1206,6 +1311,8 @@ function buildMirrors(item) {
 
 function PlayerScreen({ route, navigation }) {
     const { item } = route.params;
+    // Bump view counter once per Player mount so popular titles surface in local ranking.
+    try { Storage.bump(`views_${item.id}`, 1); } catch (_) { /* ignore */ }
     const initialMirrors = buildMirrors(item);
     const [streamSources, setStreamSources] = useState(initialMirrors);
     const [activeSourceIdx, setActiveSourceIdx] = useState(0);
@@ -2150,6 +2257,20 @@ const styles = StyleSheet.create({
     posterFallbackIcon: { fontSize: 28, marginBottom: 4 },
     posterFallbackText: { color: COLORS.textSecondary, fontSize: 10, textAlign: 'center' },
     posterImage: { width: '100%', height: '100%' },
+    posterTopLeft: { position: 'absolute', top: 6, left: 6, flexDirection: 'column', gap: 4, alignItems: 'flex-start' },
+    posterTopRight: { position: 'absolute', top: 6, right: 6, maxWidth: '60%' },
+    posterBottomLeft: { position: 'absolute', bottom: 6, left: 6 },
+    qualityBadge: { paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3 },
+    qualityBadgeGold: { backgroundColor: '#f5c518' },
+    qualityBadgeCyan: { backgroundColor: '#00bcd4' },
+    qualityBadgeMuted: { backgroundColor: 'rgba(255,255,255,0.6)' },
+    qualityBadgeText: { color: '#000', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+    sourceBadge: { backgroundColor: 'rgba(0,0,0,0.75)', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3 },
+    sourceBadgeText: { color: '#fff', fontSize: 8, fontWeight: '700' },
+    subtitleBadge: { backgroundColor: 'rgba(255,255,255,0.85)', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 2 },
+    subtitleBadgeText: { color: '#000', fontSize: 8, fontWeight: '900', letterSpacing: 0.5 },
+    viewCountBadge: { backgroundColor: 'rgba(0,0,0,0.65)', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3 },
+    viewCountText: { color: '#fff', fontSize: 9, fontWeight: '700' },
 
     playerWrapper: { width: '100%', aspectRatio: 16 / 9, maxHeight: 720, minHeight: 240, backgroundColor: '#000' },
     iframeFallback: { flex: 1, position: 'relative', justifyContent: 'center', alignItems: 'center' },

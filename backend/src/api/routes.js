@@ -510,6 +510,81 @@ router.get('/genres', (req, res) => {
     res.json({ genres: ALL_GENRES });
 });
 
+// Helper: pull catalog from any scraper shape (movieBox uses getCatalog(), others may expose .catalog)
+function getScraperCatalog(scraper) {
+    if (!scraper) return [];
+    if (typeof scraper.getCatalog === 'function') return scraper.getCatalog();
+    if (Array.isArray(scraper.catalog)) return scraper.catalog;
+    return [];
+}
+
+// Direct media lookup by id — used by Continue Watching / Watchlist to hydrate
+// a stored id without round-tripping through /search?q=. Avoids /search
+// prefix-match failures for live-streamed titles with no searchable text.
+router.get('/media/:id', async (req, res) => {
+    const { id } = req.params;
+    if (!id || typeof id !== 'string') {
+        return res.status(400).json({ error: 'id required' });
+    }
+    res.set('Cache-Control', 'no-store');
+    try {
+        // Try curated catalog first
+        for (const scraper of scrapers) {
+            const cat = getScraperCatalog(scraper);
+            const hit = cat.find(c => c && (c.id === id || c.tmdbId === id || c.imdbId === id));
+            if (hit) {
+                const item = typeof scraper.toFrontendItem === 'function' ? scraper.toFrontendItem(hit) : hit;
+                return res.json({ ...item, sourceOrigin: 'curated', sourceName: item.sourceName || scraper.sourceName });
+            }
+        }
+        // Fall through to live lookup
+        try {
+            const live = await Promise.race([
+                liveClient.byId(id),
+                new Promise(resolve => setTimeout(() => resolve(null), 3500))
+            ]);
+            if (live) return res.json({ ...live, sourceOrigin: 'live' });
+        } catch (_) { /* ignore */ }
+        res.status(404).json({ error: 'not_found', id });
+    } catch (err) {
+        res.status(500).json({ error: 'media_lookup_failed', message: err && err.message });
+    }
+});
+
+// Top IMDb: returns up to N curated titles sorted by imdbRating desc.
+router.get('/top-imdb', async (req, res) => {
+    const limit = Math.max(1, Math.min(50, parseInt(req.query.limit, 10) || 12));
+    res.set('Cache-Control', 'no-store');
+    try {
+        const scored = [];
+        for (const scraper of scrapers) {
+            const cat = getScraperCatalog(scraper);
+            for (const c of cat) {
+                if (!c) continue;
+                const r = Number(c.imdbRating || c.rating || 0);
+                if (r > 0) {
+                    const item = typeof scraper.toFrontendItem === 'function' ? scraper.toFrontendItem(c) : c;
+                    scored.push({ ...item, sourceOrigin: 'curated', sourceName: item.sourceName || scraper.sourceName });
+                }
+            }
+        }
+        scored.sort((a, b) => Number(b.imdbRating || b.rating || 0) - Number(a.imdbRating || a.rating || 0));
+        // Dedupe by tmdbId/imdbId/title+year
+        const seen = new Set();
+        const unique = [];
+        for (const it of scored) {
+            const k = it.imdbId || it.tmdbId || `${(it.title || '').toLowerCase()}|${it.year || ''}`;
+            if (k && seen.has(k)) continue;
+            if (k) seen.add(k);
+            unique.push(it);
+            if (unique.length >= limit) break;
+        }
+        res.json({ count: unique.length, results: unique });
+    } catch (err) {
+        res.status(500).json({ error: 'top_imdb_failed', message: err && err.message });
+    }
+});
+
 router.get('/sources', (req, res) => {
     const enabledSources = (process.env.ENABLED_SOURCES || 'BeeTV,MovieBoxHD,OnStream,HDOBox,Movies123,YTS,YIFY,tmovies,donkey,uflix')
         .split(',').map(s => s.trim()).filter(Boolean);
