@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android TV launcher banner (320x180 px). Drop into client/android/app/src/main/res/drawable/.
+  Replace with a real PNG/JPG when you generate assets.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#0a0a0a"/>
+        </shape>
+    </item>
+    <item android:gravity="center">
+        <shape android:shape="oval">
+            <size android:width="80dp" android:height="80dp"/>
+            <solid android:color="#e50914"/>
+        </shape>
+    </item>
+</layer-list>

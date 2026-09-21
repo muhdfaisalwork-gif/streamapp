@@ -1,0 +1,26 @@
+{
+  "name": "streaming-app-backend",
+  "version": "1.0.0",
+  "description": "Enterprise Cross-Platform Legal Streaming Platform - Core Backend Services",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "streaming",
+    "hls",
+    "legal",
+    "public-domain",
+    "open-movies"
+  ],
+  "author": "Antigravity Engineering Team",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.1",
+    "express": "^5.2.1",
+    "playwright": "^1.63.0"
+  }
+}

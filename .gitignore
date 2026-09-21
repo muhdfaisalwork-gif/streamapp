@@ -1,0 +1,46 @@
+﻿# Node / Python
+node_modules/
+*.log
+.env
+.cache/
+.cache.db
+integrity.db
+scraper/cache.db
+scraper/__pycache__/
+*.pyc
+
+# Build outputs
+dist/
+.tmp/
+.turbo/
+out/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Expo
+.expo/
+.expo-shared/
+metro-cache/
+web-build/
+
+# Streaming-app internal
+backend/backend.log
+backend/backend.err.log
+backend/server_out.log
+backend/server_err.log
+backend/boot_err.log
+frontend/expo.log
+frontend/expo.err.log
+live-scraper.log
+live-scraper.log.err
+
+# Secrets / packages
+*.p12
+*.pfx
+*.keystore
+*.jks
+release.keystore

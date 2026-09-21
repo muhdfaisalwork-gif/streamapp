@@ -1,0 +1,10 @@
+Package: streaming-app
+Version: 1.0.0
+Section: video
+Priority: optional
+Architecture: amd64
+Depends: libc6 (>= 2.31), libgtk-3-0 (>= 3.24), libmpv1 (>= 0.32)
+Maintainer: Streaming App Foundation <engineering@streaming-app.local>
+Description: High-performance legal cross-platform video streaming app
+ StreamApp delivers verified legal public-domain and Creative Commons
+ streaming across desktop, mobile, and television form factors.
