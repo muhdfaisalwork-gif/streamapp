@@ -183,7 +183,8 @@ function MediaCard({ item, onPress, isLarge, showProgress }) {
 
 // =================== CATEGORY CAROUSEL ===================
 function CategoryRow({ category, onSelectMedia, onSelectCategory }) {
-    if (!category.items || category.items.length === 0) return null;
+    const items = (category.items || []).slice(0, 30); // cap visible row for perf
+    if (items.length === 0) return null;
     return (
         <View style={styles.categorySection}>
             <TouchableOpacity
@@ -193,22 +194,33 @@ function CategoryRow({ category, onSelectMedia, onSelectCategory }) {
                 <Text style={styles.categoryTitle}>{category.title}</Text>
                 <Text style={styles.categoryMeta}>{category.count} titles ›</Text>
             </TouchableOpacity>
-            <FlatList
+            {/* Inline horizontal scroll — RN-web can't reliably nest FlatList inside vertical ScrollView */}
+            <ScrollView
                 horizontal
-                data={category.items}
-                keyExtractor={(item, idx) => `${item.id}-${idx}`}
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.categoryList}
-                renderItem={({ item }) => (
-                    <View style={styles.cardSlot}>
+                style={{ width: '100%' }}
+            >
+                {items.map((item, idx) => (
+                    <View key={`${item.id || idx}-${idx}`} style={styles.cardSlot}>
                         <MediaCard
                             item={item}
                             onPress={onSelectMedia}
                             showProgress
                         />
                     </View>
-                )}
-            />
+                ))}
+                <TouchableOpacity
+                    style={[styles.cardSlot, styles.cardSlotMore]}
+                    onPress={() => onSelectCategory && onSelectCategory(category)}
+                    activeOpacity={0.7}
+                >
+                    <View style={[styles.cardPoster, styles.cardSlotMorePoster]}>
+                        <Text style={styles.cardSlotMoreText}>View All</Text>
+                        <Text style={styles.cardSlotMoreCount}>{category.count} ›</Text>
+                    </View>
+                </TouchableOpacity>
+            </ScrollView>
         </View>
     );
 }
@@ -480,14 +492,14 @@ function HomeScreen({ navigation }) {
                             <Text style={styles.categoryTitle}>Continue Watching</Text>
                             <Text style={styles.categoryMeta}>{continueWatching.length} in progress ›</Text>
                         </View>
-                        <FlatList
+                        <ScrollView
                             horizontal
-                            data={continueWatching}
-                            keyExtractor={(item, idx) => `${item.id}-${idx}`}
                             showsHorizontalScrollIndicator={false}
                             contentContainerStyle={styles.continueWatchingList}
-                            renderItem={({ item }) => (
-                                <View style={styles.cardSlot}>
+                            style={{ width: '100%' }}
+                        >
+                            {continueWatching.map((item, idx) => (
+                                <View key={`${item.id || idx}-${idx}`} style={styles.cardSlot}>
                                     <MediaCard
                                         item={item}
                                         onPress={(m) => {
@@ -497,8 +509,8 @@ function HomeScreen({ navigation }) {
                                         showProgress
                                     />
                                 </View>
-                            )}
-                        />
+                            ))}
+                        </ScrollView>
                     </View>
                 )}
 
@@ -508,18 +520,18 @@ function HomeScreen({ navigation }) {
                             <Text style={styles.categoryTitle}>★ Top IMDb</Text>
                             <Text style={styles.categoryMeta}>{topImdb.length} titles ›</Text>
                         </View>
-                        <FlatList
+                        <ScrollView
                             horizontal
-                            data={topImdb}
-                            keyExtractor={(item, idx) => `${item.id}-${idx}`}
                             showsHorizontalScrollIndicator={false}
                             contentContainerStyle={styles.categoryList}
-                            renderItem={({ item }) => (
-                                <View style={styles.cardSlot}>
+                            style={{ width: '100%' }}
+                        >
+                            {topImdb.map((item, idx) => (
+                                <View key={`${item.id || idx}-${idx}`} style={styles.cardSlot}>
                                     <MediaCard item={item} onPress={onSelectMedia} />
                                 </View>
-                            )}
-                        />
+                            ))}
+                        </ScrollView>
                     </View>
                 )}
 
@@ -565,7 +577,7 @@ function SearchScreen({ route, navigation }) {
     const { width } = useWindowDimensions();
     const numCols = width >= 1400 ? 6 : width >= 1024 ? 5 : width >= 768 ? 4 : width >= 480 ? 3 : 2;
     const [typeFilter, setTypeFilter] = useState('all');
-    const [searchMode, setSearchMode] = useState('live'); // 'live' | 'curated'
+    const [searchMode, setSearchMode] = useState('curated'); // 'live' | 'curated' — default curated so search always works on first load
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -596,9 +608,23 @@ function SearchScreen({ route, navigation }) {
             if (type && type !== 'all') params.set('type', type);
 
             const endpoint = mode === 'live' ? `${API_BASE}/live/search?${params}` : `${API_BASE}/search?${params}`;
-            const res = await fetch(endpoint);
-            const data = await res.json();
-            setResults(data.results || []);
+            let res = await fetch(endpoint);
+            let data = await res.json();
+            let results = data.results || [];
+            // Auto-fallback: if Live mode returns 0 results for a query, try Curated
+            if (mode === 'live' && q && results.length === 0) {
+                try {
+                    const fallbackRes = await fetch(`${API_BASE}/search?${params}`);
+                    const fallbackData = await fallbackRes.json();
+                    const fallbackResults = fallbackData.results || [];
+                    if (fallbackResults.length > 0) {
+                        results = fallbackResults.map(r => ({ ...r, sourceOrigin: 'curated', _fallback: true }));
+                    }
+                } catch (fbErr) {
+                    console.error('Curated fallback failed:', fbErr);
+                }
+            }
+            setResults(results);
         } catch (err) {
             console.error('Search failed:', err);
         } finally {
@@ -2156,6 +2182,16 @@ const styles = StyleSheet.create({
     cardSlot: {
         width: 148, minWidth: 148, maxWidth: 148, flex: 0, flexShrink: 0
     },
+    cardSlotMore: {
+        width: 132, minWidth: 132, maxWidth: 132,
+    },
+    cardSlotMorePoster: {
+        backgroundColor: COLORS.surface,
+        borderWidth: 1, borderColor: COLORS.border,
+        borderStyle: 'dashed',
+    },
+    cardSlotMoreText: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '700', marginBottom: 4 },
+    cardSlotMoreCount: { color: COLORS.brand, fontSize: 12, fontWeight: '600' },
     cardLarge: { width: 180, minWidth: 180, maxWidth: 180, flex: 0, flexShrink: 0 },
     cardPoster: { width: '100%', aspectRatio: 2/3, backgroundColor: COLORS.surfaceAlt, overflow: 'hidden' },
     cardInfo: { padding: 8 },
