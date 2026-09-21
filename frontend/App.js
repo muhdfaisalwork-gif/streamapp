@@ -1443,6 +1443,8 @@ function DownloadScreen({ navigation }) {
         else if (/linux/.test(ua)) setDetectedOS('linux');
     }, []);
 
+    const DOWNLOAD_EXE_SIZE_MB = 35.9;
+
     const cards = [
         {
             id: 'web', os: 'Web', emoji: '🌐', title: 'Open in Browser', sub: 'Works everywhere — instant access.', cta: 'Open App', action: () => window.open('https://ls7m73ztxvfc2.space.minimax.io', '_blank'),
@@ -1453,8 +1455,8 @@ function DownloadScreen({ navigation }) {
             primary: detectedOS === 'android', badge: 'Sideload ready'
         },
         {
-            id: 'windows', os: 'Windows', emoji: '🪟', title: 'Windows Desktop', sub: 'StreamApp.exe — 37.6 MB native launcher. Opens the web app, adds itself to Windows Startup.', cta: '⬇ Download StreamApp.exe', action: () => window.open('https://github.com/muhdfaisalwork-gif/streamapp/releases/latest/download/StreamApp.exe', '_blank'),
-            primary: detectedOS === 'windows', badge: '37.6 MB'
+            id: 'windows', os: 'Windows', emoji: '🪟', title: 'Windows Desktop', sub: 'StreamApp.exe — ${DOWNLOAD_EXE_SIZE_MB} MB native launcher. Opens the web app, adds itself to Windows Startup.', cta: '⬇ Download StreamApp.exe', action: () => window.open('https://github.com/muhdfaisalwork-gif/streamapp/releases/latest/download/StreamApp.exe', '_blank'),
+            primary: detectedOS === 'windows', badge: '${DOWNLOAD_EXE_SIZE_MB} MB'
         },
         {
             id: 'mac', os: 'macOS', emoji: '🍎', title: 'macOS Desktop', sub: 'Launcher .pkg — native, signs itself, runs the web app in your default browser.', cta: '⬇ Download StreamApp.dmg', action: () => window.open('https://github.com/muhdfaisalwork-gif/streamapp/releases/latest/download/StreamApp.dmg', '_blank'),
@@ -1486,7 +1488,7 @@ function DownloadScreen({ navigation }) {
                     <TouchableOpacity
                         key={card.id}
                         onPress={card.action}
-                        style={[styles.card, card.primary && { borderColor: COLORS.accent, borderWidth: 2 }]}
+                        style={[styles.cardInfoCard, card.primary && { borderColor: COLORS.accent, borderWidth: 2 }]}
                         activeOpacity={0.8}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                             <Text style={{ fontSize: 28, marginRight: 12 }}>{card.emoji}</Text>
@@ -1916,7 +1918,7 @@ const styles = StyleSheet.create({
     cardMeta: { color: COLORS.textMuted, fontSize: 11, marginTop: 2 },
     cardSub: { color: COLORS.textMuted, fontSize: 11, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.5 },
     cardDesc: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 8 },
-    card: {
+    cardInfoCard: {
         backgroundColor: COLORS.surface,
         marginHorizontal: 16, marginVertical: 6,
         padding: 16, borderRadius: 12,

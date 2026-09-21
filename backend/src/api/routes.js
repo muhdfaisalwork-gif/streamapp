@@ -117,7 +117,7 @@ const COUNTRY_BUCKETS = {
     'chinese':    { code: 'CN',  flag: '🇨🇳', label: 'Chinese Cinema & C-Drama',
                     ids: ['hero-2002','house-flying-daggers-2004','crouching-tiger-2000','mood-for-love-2000','farewell-concubine-1993','chungking-express-1994','infernal-affairs-2002','police-story-1985'] },
     'british':    { code: 'GB',  flag: '🇬🇧', label: 'British Cinema & TV',
-                    ids: ['doctor-who-2005','peaky-blinders-2013','the-crown-2016','sherlock-2010','1917-2019','dunkirk-2017','tenet-2020','ex-machina-2014','gravity-2013','imitation-game-2014','theory-of-everything-2014','notting-hill-1999','about-a-boy-2002','hot-fuzz-2007','28-days-later-2002','28-weeks-later-2007','casino-royale-2006','harry-potter-1-2001','127-hours-2010','dark-2017'] },
+                    ids: ['doctor-who-2005','peaky-blinders-2013','the-crown-2016','1917-2019','dunkirk-2017','tenet-2020','ex-machina-2014','gravity-2013','imitation-game-2014','theory-of-everything-2014','notting-hill-1999','about-a-boy-2002','hot-fuzz-2007','28-days-later-2002','28-weeks-later-2007','casino-royale-2006','harry-potter-1-2001','127-hours-2010','dark-2017','shaun-of-the-dead-2004','love-actually-2003','skyfall-2012'] },
     'french':     { code: 'FR',  flag: '🇫🇷', label: 'French Cinema',
                     ids: ['intouchables-2011','amour-2012','the-artist-2011'] },
     'italian':    { code: 'IT',  flag: '🇮🇹', label: 'Italian Cinema',
@@ -191,18 +191,24 @@ router.get('/countries', async (req, res) => {
 });
 
 // ==================== LIVE SCRAPER ROUTES (Python :7800) ====================
+// Race a promise against a hard timeout so a stalled Python scraper never hangs the player.
+const bounded = (promise, ms, fallback) => Promise.race([
+    promise.catch(() => fallback),
+    new Promise(r => setTimeout(() => r(fallback), ms))
+]);
+
 router.get('/live/search', async (req, res) => {
     const { q, genre, country, lang, language, page = '1', limit, pageSize } = req.query;
     const size = parseInt(pageSize || limit, 10) || 50;
     try {
-        const data = await liveClient.search({
+        const data = await bounded(liveClient.search({
             q: typeof q === 'string' ? q : '',
             genre: typeof genre === 'string' ? genre : '',
             country: typeof country === 'string' ? country : '',
             language: typeof (language || lang) === 'string' ? (language || lang) : '',
             page: parseInt(page, 10) || 1,
             pageSize: size
-        });
+        }), 3000, { results: [], sources: [], live: false });
         res.json(data);
     } catch (error) {
         console.error('[live/search] error:', error);
@@ -215,7 +221,7 @@ router.get('/live/country/:key', async (req, res) => {
     const { page = '1', limit, pageSize } = req.query;
     const size = parseInt(pageSize || limit, 10) || 50;
     try {
-        const data = await liveClient.getByCountry(key, parseInt(page, 10) || 1, size);
+        const data = await bounded(liveClient.getByCountry(key, parseInt(page, 10) || 1, size), 3000, { results: [] });
         if (data && Array.isArray(data.results)) {
             data.results = sanitizeResults(data.results);
             data.count = data.results.length;
@@ -232,7 +238,7 @@ router.get('/live/genre/:genre', async (req, res) => {
     const { page = '1', limit, pageSize } = req.query;
     const size = parseInt(pageSize || limit, 10) || 50;
     try {
-        const data = await liveClient.getByGenre(genre, parseInt(page, 10) || 1, size);
+        const data = await bounded(liveClient.getByGenre(genre, parseInt(page, 10) || 1, size), 3000, { results: [] });
         if (data && Array.isArray(data.results)) {
             data.results = sanitizeResults(data.results);
             data.count = data.results.length;
@@ -247,7 +253,7 @@ router.get('/live/genre/:genre', async (req, res) => {
 router.post('/live/resolve', async (req, res) => {
     const { site, url, season, episode } = req.body;
     try {
-        const streamUrl = await liveClient.resolve(site, url, season, episode);
+        const streamUrl = await bounded(liveClient.resolve(site, url, season, episode), 4000, null);
         if (streamUrl) {
             res.json({ streamUrl, status: 'success' });
         } else {
@@ -261,7 +267,7 @@ router.post('/live/resolve', async (req, res) => {
 
 router.get('/live/stats', async (req, res) => {
     try {
-        const stats = await liveClient.getStats();
+        const stats = await bounded(liveClient.getStats(), 2000, {});
         res.json(stats);
     } catch (error) {
         console.error('[live/stats] error:', error);
