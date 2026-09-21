@@ -72,42 +72,34 @@ const Storage = {
 const DEFAULT_FALLBACK_POSTER = 'https://image.tmdb.org/t/p/w500/7WTsnHkbA0FaG6R9twfFde0I9hl.jpg';
 
 function Poster({ url, title, style, badge }) {
-    const validInitial = url && typeof url === 'string' && url.startsWith('http') && !url.includes('/poster_') ? url : DEFAULT_FALLBACK_POSTER;
+    const validInitial = url && typeof url === 'string' && url.startsWith('http') && !url.includes('/poster_') ? url : '';
     const [imgSrc, setImgSrc] = useState(validInitial);
-    const [failedAll, setFailedAll] = useState(false);
 
     useEffect(() => {
-        const u = url && typeof url === 'string' && url.startsWith('http') && !url.includes('/poster_') ? url : DEFAULT_FALLBACK_POSTER;
+        const u = url && typeof url === 'string' && url.startsWith('http') && !url.includes('/poster_') ? url : '';
         setImgSrc(u);
-        setFailedAll(false);
     }, [url]);
 
-    const handleError = () => {
-        if (imgSrc !== DEFAULT_FALLBACK_POSTER) {
-            setImgSrc(DEFAULT_FALLBACK_POSTER);
-        } else {
-            setFailedAll(true);
-        }
-    };
-
-    if (failedAll) {
-        return (
-            <View style={[styles.posterFallback, style]}>
-                <Text style={styles.posterFallbackIcon}>🎬</Text>
-                <Text style={styles.posterFallbackText} numberOfLines={2}>{title || 'Unknown'}</Text>
-            </View>
-        );
-    }
+    // Always render the title+emoji fallback below the image. The image element paints
+    // on top when it loads successfully; when it fails (cross-origin / network / slow),
+    // the fallback remains visible underneath and the card is never a black rectangle.
     return (
-        <View style={[style, { width: '100%', overflow: 'hidden' }]}>
-            <Image
-                source={{ uri: imgSrc }}
-                style={[styles.posterImage, StyleSheet.absoluteFill]}
-                resizeMode="cover"
-                fadeDuration={0}
-                progressiveRenderingEnabled={false}
-                onError={handleError}
-            />
+        <View style={[style, { width: '100%', overflow: 'hidden', backgroundColor: '#2a2a2a' }]}>
+            <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', padding: 6 }]}>
+                <Text style={{ fontSize: 32, marginBottom: 6, opacity: 0.5 }}>🎬</Text>
+                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700', textAlign: 'center', opacity: 0.9 }} numberOfLines={2}>
+                    {title || 'Loading…'}
+                </Text>
+            </View>
+            {imgSrc ? (
+                <Image
+                    source={{ uri: imgSrc }}
+                    style={[styles.posterImage, StyleSheet.absoluteFill]}
+                    resizeMode="cover"
+                    fadeDuration={0}
+                    progressiveRenderingEnabled={false}
+                />
+            ) : null}
             {badge && (
                 <View style={styles.badge}>
                     <Text style={styles.badgeText}>{badge}</Text>
