@@ -243,6 +243,66 @@ function SkeletonGrid({ count = 6 }) {
     );
 }
 
+// =================== WATCHLIST API HELPER (server-backed persistence) ===================
+const WatchlistAPI = {
+    getUserId() {
+        let uid = Storage.get('user_id');
+        if (!uid) {
+            uid = 'u_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+            Storage.set('user_id', uid);
+        }
+        return uid;
+    },
+    async list() {
+        try {
+            const ctrl = new AbortController();
+            const tid = setTimeout(() => ctrl.abort(), 3000);
+            const r = await fetch(`${API_BASE}/watchlist?user_id=${encodeURIComponent(this.getUserId())}`, { signal: ctrl.signal });
+            clearTimeout(tid);
+            if (!r.ok) return null;
+            const j = await r.json();
+            return j.items || [];
+        } catch (e) {
+            return null;  // network error — fall back to local
+        }
+    },
+    async add(title) {
+        try {
+            await fetch(`${API_BASE}/watchlist`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: this.getUserId(), title }),
+            });
+        } catch (e) {}
+    },
+    async remove(titleId) {
+        try {
+            await fetch(`${API_BASE}/watchlist?user_id=${encodeURIComponent(this.getUserId())}&title_id=${encodeURIComponent(titleId)}`, {
+                method: 'DELETE',
+            });
+        } catch (e) {}
+    },
+    async recordProgress(historyEntry) {
+        try {
+            await fetch(`${API_BASE}/history`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: this.getUserId(), ...historyEntry }),
+            });
+        } catch (e) {}
+    },
+    async getHistory() {
+        try {
+            const r = await fetch(`${API_BASE}/history?user_id=${encodeURIComponent(this.getUserId())}`);
+            if (!r.ok) return null;
+            const j = await r.json();
+            return j.items || [];
+        } catch (e) {
+            return null;
+        }
+    },
+};
+
 // =================== APP HEADER (Responsive with Hamburger) ===================
 function AppHeader({ navigation, title }) {
     const { width } = useWindowDimensions();
@@ -580,7 +640,7 @@ function SearchScreen({ route, navigation }) {
     const { width } = useWindowDimensions();
     const numCols = width >= 1400 ? 6 : width >= 1024 ? 5 : width >= 768 ? 4 : width >= 480 ? 3 : 2;
     const [typeFilter, setTypeFilter] = useState('all');
-    const [searchMode, setSearchMode] = useState('curated'); // 'live' | 'curated' — default curated so search always works on first load
+    const [searchMode, setSearchMode] = useState('curated'); // 'live' | 'curated' | 'catalog' — default curated so search always works on first load
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -610,10 +670,36 @@ function SearchScreen({ route, navigation }) {
             if (q) params.set('q', q);
             if (type && type !== 'all') params.set('type', type);
 
-            const endpoint = mode === 'live' ? `${API_BASE}/live/search?${params}` : `${API_BASE}/search?${params}`;
+            let endpoint;
+            if (mode === 'live') {
+                endpoint = `${API_BASE}/live/search?${params}`;
+            } else if (mode === 'catalog') {
+                endpoint = `${API_BASE}/search?${params}`;
+            } else {
+                endpoint = `${API_BASE}/search?${params}`;
+            }
             let res = await fetch(endpoint);
             let data = await res.json();
-            let results = data.results || [];
+            let results = [];
+            if (mode === 'catalog') {
+                results = (data.items || []).map(it => ({
+                    id: it.id,
+                    slug: it.slug,
+                    title: it.title,
+                    year: it.year,
+                    type: it.type,
+                    poster: it.poster,
+                    rating: it.rating,
+                    overview: it.overview,
+                    sourceOrigin: 'catalog',
+                    genres: (it.genres || []).map(g => g.name).join(', '),
+                    countries: (it.countries || []).map(c => c.name).join(', '),
+                    languages: (it.languages || []).map(l => l.name).join(', '),
+                    _catalog: true,
+                }));
+            } else {
+                results = data.results || [];
+            }
             // Auto-fallback: if Live mode returns 0 results for a query, try Curated
             if (mode === 'live' && q && results.length === 0) {
                 try {
@@ -650,7 +736,7 @@ function SearchScreen({ route, navigation }) {
                     onPress={() => setSearchMode('live')}
                 >
                     <Text style={[styles.searchModeText, searchMode === 'live' && styles.searchModeTextActive]}>
-                        ⚡ Live (All 10 Sources)
+                        ⚡ Live
                     </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -658,7 +744,15 @@ function SearchScreen({ route, navigation }) {
                     onPress={() => setSearchMode('curated')}
                 >
                     <Text style={[styles.searchModeText, searchMode === 'curated' && styles.searchModeTextActive]}>
-                        📚 Curated (Fast)
+                        📚 Curated
+                    </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={[styles.searchModeTab, searchMode === 'catalog' && styles.searchModeTabActive]}
+                    onPress={() => setSearchMode('catalog')}
+                >
+                    <Text style={[styles.searchModeText, searchMode === 'catalog' && styles.searchModeTextActive]}>
+                        🗂️ Catalog (13k)
                     </Text>
                 </TouchableOpacity>
             </View>
@@ -1126,6 +1220,225 @@ function GenreScreen({ route, navigation }) {
                         <View style={styles.emptyState}>
                             <Text style={styles.emptyIcon}>🎭</Text>
                             <Text style={styles.emptyTitle}>No titles</Text>
+                        </View>
+                    }
+                />
+            )}
+        </SafeAreaView>
+    );
+}
+
+// =================== BROWSE SCREEN (Catalog-Backed Multi-Facet) ===================
+function BrowseScreen({ navigation }) {
+    const TABS = [
+        { key: 'movie', label: 'Movies', count: 12891 },
+        { key: 'tv', label: 'TV', count: 183 },
+        { key: 'anime', label: 'Anime', count: 26 },
+        { key: 'short_drama', label: 'Short Dramas', count: 0 },
+    ];
+    const SORTS = [
+        { key: 'popularity', label: 'Trending' },
+        { key: 'rating', label: 'Top Rated' },
+        { key: 'year', label: 'Latest' },
+    ];
+    const [activeTab, setActiveTab] = useState('movie');
+    const [activeSort, setActiveSort] = useState('popularity');
+    const [genre, setGenre] = useState(null);        // slug or null
+    const [country, setCountry] = useState(null);    // code or null
+    const [items, setItems] = useState([]);
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [loading, setLoading] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [total, setTotal] = useState(0);
+    const [genres, setGenres] = useState([]);
+    const [countries, setCountries] = useState([]);
+    const { width } = useWindowDimensions();
+    const numCols = width >= 1400 ? 6 : width >= 1024 ? 5 : width >= 768 ? 4 : width >= 480 ? 3 : 2;
+
+    // Load filter chips once
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const [gr, co] = await Promise.all([
+                    fetch(`${API_BASE}/genres-catalog?with_counts=1`).then(r => r.json()),
+                    fetch(`${API_BASE}/countries-catalog?with_counts=1`).then(r => r.json()),
+                ]);
+                if (!cancelled) {
+                    setGenres((gr.items || []).filter(g => g.count > 0).slice(0, 14));
+                    setCountries((co.items || []).filter(c => c.count > 0).slice(0, 18));
+                }
+            } catch {}
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    const loadItems = useCallback(async (tab, sort, g, c, pageNum, append) => {
+        if (pageNum === 1) setLoading(true); else setLoadingMore(true);
+        try {
+            let url;
+            if (tab === 'anime') {
+                // anime uses genre-based lookup (more reliable than type=anime)
+                url = `${API_BASE}/titles?genre=anime&sort=${sort}&page=${pageNum}&page_size=24`;
+            } else {
+                url = `${API_BASE}/titles?type=${tab}&sort=${sort}&page=${pageNum}&page_size=24`;
+            }
+            const params = [];
+            if (g) params.push(`genre=${encodeURIComponent(g)}`);
+            if (c) params.push(`country=${encodeURIComponent(c)}`);
+            if (params.length) url += '&' + params.join('&');
+
+            const ctrl = new AbortController();
+            const tid = setTimeout(() => ctrl.abort(), 4000);
+            const res = await fetch(url, { signal: ctrl.signal });
+            clearTimeout(tid);
+            const data = await res.json();
+            const fetched = data.items || [];
+            if (append) {
+                setItems(prev => {
+                    const ids = new Set(prev.map(p => String(p.id)));
+                    return [...prev, ...fetched.filter(f => !ids.has(String(f.id)))];
+                });
+            } else {
+                setItems(fetched);
+            }
+            setTotal(data.total || 0);
+            setHasMore(Boolean(data.hasMore));
+        } catch (e) {
+            if (!append) setItems([]);
+        } finally {
+            setLoading(false);
+            setLoadingMore(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        setPage(1);
+        loadItems(activeTab, activeSort, genre, country, 1, false);
+    }, [activeTab, activeSort, genre, country, loadItems]);
+
+    const onEndReached = () => {
+        if (loading || loadingMore || !hasMore) return;
+        const next = page + 1;
+        setPage(next);
+        loadItems(activeTab, activeSort, genre, country, next, true);
+    };
+
+    const handleItemPress = (item) => {
+        if (item.type === 'tv') {
+            navigation.navigate('TVDetail', { id: item.id, slug: item.slug, title: item.title });
+        } else {
+            // For movies/anime, push to a detail screen via Player route
+            navigation.navigate('Player', {
+                id: item.id,
+                slug: item.slug,
+                tmdbId: item.tmdbId,
+                imdbId: item.imdbId,
+                title: item.title,
+                type: item.type,
+                year: item.year,
+                poster: item.poster,
+                backdrop: item.backdrop,
+                overview: item.overview,
+                runtime: item.runtime,
+                rating: item.rating,
+                genres: item.genres || [],
+            });
+        }
+    };
+
+    const activeTabMeta = TABS.find(t => t.key === activeTab);
+
+    return (
+        <SafeAreaView style={styles.screen}>
+            <AppHeader navigation={navigation} title="Browse" />
+            {/* Tab bar */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.countryBar}>
+                {TABS.map(t => (
+                    <TouchableOpacity
+                        key={t.key}
+                        style={[styles.countryChip, activeTab === t.key && styles.countryChipActive]}
+                        onPress={() => { setActiveTab(t.key); setGenre(null); setCountry(null); }}
+                    >
+                        <Text style={[styles.countryLabel, activeTab === t.key && styles.countryLabelActive]}>
+                            {t.label} ({t.count.toLocaleString()})
+                        </Text>
+                    </TouchableOpacity>
+                ))}
+            </ScrollView>
+            {/* Sort row */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+                {SORTS.map(s => (
+                    <TouchableOpacity
+                        key={s.key}
+                        style={[styles.countryChip, { backgroundColor: activeSort === s.key ? COLORS.surfaceAlt : 'transparent', borderColor: COLORS.border }, activeSort === s.key && styles.countryChipActive]}
+                        onPress={() => setActiveSort(s.key)}
+                    >
+                        <Text style={[styles.countryLabel, activeSort === s.key && styles.countryLabelActive]}>{s.label}</Text>
+                    </TouchableOpacity>
+                ))}
+            </ScrollView>
+            {/* Genre chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 6 }}>
+                <TouchableOpacity
+                    style={[styles.countryChip, !genre && styles.countryChipActive]}
+                    onPress={() => setGenre(null)}
+                >
+                    <Text style={[styles.countryLabel, !genre && styles.countryLabelActive]}>All Genres</Text>
+                </TouchableOpacity>
+                {genres.map(g => (
+                    <TouchableOpacity
+                        key={g.slug}
+                        style={[styles.countryChip, genre === g.slug && styles.countryChipActive]}
+                        onPress={() => setGenre(genre === g.slug ? null : g.slug)}
+                    >
+                        <Text style={[styles.countryLabel, genre === g.slug && styles.countryLabelActive]}>{g.name} ({g.count})</Text>
+                    </TouchableOpacity>
+                ))}
+            </ScrollView>
+            {/* Country chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+                <TouchableOpacity
+                    style={[styles.countryChip, !country && styles.countryChipActive]}
+                    onPress={() => setCountry(null)}
+                >
+                    <Text style={[styles.countryLabel, !country && styles.countryLabelActive]}>All Countries</Text>
+                </TouchableOpacity>
+                {countries.map(c => (
+                    <TouchableOpacity
+                        key={c.code}
+                        style={[styles.countryChip, country === c.code && styles.countryChipActive]}
+                        onPress={() => setCountry(country === c.code ? null : c.code)}
+                    >
+                        <Text style={[styles.countryLabel, country === c.code && styles.countryLabelActive]}>{c.flag} {c.name} ({c.count})</Text>
+                    </TouchableOpacity>
+                ))}
+            </ScrollView>
+            <View style={styles.browseHeader}>
+                <Text style={styles.browseTitle}>
+                    {activeTabMeta?.label}{genre ? ` · ${genres.find(g => g.slug === genre)?.name || ''}` : ''}{country ? ` · ${countries.find(c => c.code === country)?.name || ''}` : ''}
+                </Text>
+                <Text style={styles.browseSubtitle}>{total.toLocaleString()} titles</Text>
+            </View>
+            {loading ? <SkeletonGrid count={6} /> : (
+                <FlatList
+                    data={items}
+                    keyExtractor={(item) => String(item.id)}
+                    numColumns={numCols}
+                    columnWrapperStyle={{ gap: 12, paddingHorizontal: 12 }}
+                    contentContainerStyle={{ paddingBottom: 32, gap: 12 }}
+                    renderItem={({ item }) => (
+                        <MediaCard item={{ ...item, durationMinutes: item.runtime }} onPress={handleItemPress} />
+                    )}
+                    onEndReached={onEndReached}
+                    onEndReachedThreshold={0.6}
+                    ListFooterComponent={loadingMore ? <ActivityIndicator color={COLORS.textPrimary} style={{ marginVertical: 16 }} /> : null}
+                    ListEmptyComponent={
+                        <View style={styles.emptyState}>
+                            <Text style={styles.emptyIcon}>🔍</Text>
+                            <Text style={styles.emptyTitle}>No titles match these filters</Text>
+                            <Text style={styles.emptySubtitle}>Try removing some filters.</Text>
                         </View>
                     }
                 />
@@ -1867,6 +2180,20 @@ function DownloadStack({ route }) {
     );
 }
 
+function BrowseStack({ route }) {
+    return (
+        <Stack.Navigator screenOptions={{
+            headerStyle: { backgroundColor: COLORS.surface },
+            headerTintColor: COLORS.textPrimary,
+            contentStyle: { backgroundColor: COLORS.bg }
+        }}>
+            <Stack.Screen name="BrowseMain" component={BrowseScreen} initialParams={route?.params} options={{ headerShown: false }} />
+            <Stack.Screen name="Player" component={PlayerScreen} options={{ title: 'Now Playing' }} />
+            <Stack.Screen name="TVDetail" component={TVDetailScreen} options={{ title: 'TV Series' }} />
+        </Stack.Navigator>
+    );
+}
+
 const Tab = createBottomTabNavigator();
 const Drawer = createDrawerNavigator();
 
@@ -1894,6 +2221,8 @@ function CustomDrawerContent({ navigation, state }) {
             navigation.navigate('Watchlist', { screen: 'WatchlistMain', params });
         } else if (route === 'Download') {
             navigation.navigate('Download', { screen: 'DownloadMain', params });
+        } else if (route === 'Browse') {
+            navigation.navigate('Browse', { screen: 'BrowseMain', params });
         } else {
             navigation.navigate(route, params);
         }
@@ -1931,6 +2260,7 @@ function CustomDrawerContent({ navigation, state }) {
     const items = [
         { key: 'Home', emoji: '🏠', label: 'Home' },
         { key: 'Search', emoji: '🔍', label: 'Search' },
+        { key: 'Browse', emoji: '🎬', label: 'Browse Catalog' },
         { key: 'Genres', emoji: '🎭', label: 'All Genres' },
         { key: 'Countries', emoji: '🌍', label: 'All Countries' },
         { key: 'Watchlist', emoji: '📺', label: 'Watchlist' },
@@ -2108,6 +2438,7 @@ export default function App() {
             >
                 <Drawer.Screen name="Home" component={HomeStack} />
                 <Drawer.Screen name="Search" component={SearchStack} />
+                <Drawer.Screen name="Browse" component={BrowseStack} />
                 <Drawer.Screen name="Genres" component={GenreStack} />
                 <Drawer.Screen name="Countries" component={CountryStack} />
                 <Drawer.Screen name="Watchlist" component={WatchlistStack} />
