@@ -517,6 +517,7 @@ def search(
 
 
 @app.get("/api/v1/genres")
+@app.get("/api/v1/genres-catalog")  # alias used by Node proxy
 def genres(with_counts: bool = True):
     db = CatalogDB.instance()
     if with_counts:
@@ -533,6 +534,7 @@ def genres(with_counts: bool = True):
 
 
 @app.get("/api/v1/countries")
+@app.get("/api/v1/countries-catalog")  # alias
 def countries(with_counts: bool = True):
     db = CatalogDB.instance()
     if with_counts:
@@ -550,6 +552,7 @@ def countries(with_counts: bool = True):
 
 
 @app.get("/api/v1/languages")
+@app.get("/api/v1/languages-catalog")  # alias
 def languages(with_counts: bool = True):
     db = CatalogDB.instance()
     if with_counts:
