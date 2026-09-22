@@ -481,7 +481,7 @@ def get_seasons(id_or_slug: str):
 
 @app.get("/api/v1/search")
 def search(
-    q: str = Query(..., min_length=1),
+    q: str = Query("", description="Search text (empty for filter-only browse)"),
     type: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
@@ -491,21 +491,21 @@ def search(
         raise HTTPException(400, f"invalid type: {type}")
     pat = f"%{q.lower()}%"
     type_clause = "AND t.type = ?" if type else ""
-    params: list[Any] = [pat]
+    extra_params: list[Any] = []
     if type:
-        params.append(type)
+        extra_params.append(type)
     total = db.q1(
         f"SELECT COUNT(DISTINCT t.id) c FROM titles t "
         f"WHERE (LOWER(t.title) LIKE ? OR LOWER(IFNULL(t.original_title,'')) LIKE ? OR LOWER(t.slug) LIKE ?) "
         f"{type_clause}",
-        (pat, pat, pat, *params))[0]
+        (pat, pat, pat, *extra_params))[0]
     offset = (page - 1) * page_size
     rows = db.q(
         f"SELECT DISTINCT t.* FROM titles t "
         f"WHERE (LOWER(t.title) LIKE ? OR LOWER(IFNULL(t.original_title,'')) LIKE ? OR LOWER(t.slug) LIKE ?) "
         f"{type_clause} "
         f"ORDER BY t.popularity DESC, t.rating DESC LIMIT ? OFFSET ?",
-        (pat, pat, pat, *params, page_size, offset))
+        (pat, pat, pat, *extra_params, page_size, offset))
     return {
         "items": attach_relations(rows, db),
         "query": q,

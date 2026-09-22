@@ -12,7 +12,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 // Backend API base
 // API base: tries tunnel URL first (live E2E), falls back to localhost for local dev
-const TUNNEL_API = 'https://hdz1bz-ip-72-255-21-218.tunnelmole.net/api/v1';
+const TUNNEL_API = 'https://nccrbt-ip-72-255-21-218.tunnelmole.net/api/v1';
 const LOCAL_API = 'http://localhost:3000/api/v1';
 const API_BASE = TUNNEL_API;
 
@@ -974,12 +974,31 @@ function CountryScreen({ route, navigation }) {
                 }
             } catch (e) {}
 
-            // Fallback to /search?country=  (live=false so backend skips live lane)
+            // Fallback to catalog DB when live is offline
             if (fetchedItems.length === 0 && pageNum === 1) {
                 try {
-                    const r = await fetch(`${API_BASE}/search?country=${encodeURIComponent(cKey)}&live=false`);
-                    const j = await r.json();
-                    fetchedItems = j.results || [];
+                    const ctrl2 = new AbortController();
+                    const tid2 = setTimeout(() => ctrl2.abort(), 3500);
+                    // Country bucket keys like "pakistani" — try lowercase name as code first, fallback to slug matching
+                    const countryCode = COUNTRY_BUCKETS[cKey]?.code || '';
+                    let url = `${API_BASE}/titles?sort=popularity&page=1&page_size=24`;
+                    if (countryCode && countryCode !== 'ALL') {
+                        url += `&country=${encodeURIComponent(countryCode)}`;
+                    }
+                    const r = await fetch(url, { signal: ctrl2.signal });
+                    clearTimeout(tid2);
+                    if (r.ok) {
+                        const j = await r.json();
+                        fetchedItems = (j.items || []).map(it => ({
+                            id: it.id, slug: it.slug, title: it.title,
+                            type: it.type, year: it.year, rating: it.rating,
+                            poster: it.poster, backdrop: it.backdrop,
+                            overview: it.overview, runtime: it.runtime,
+                            source: 'catalog', sourceOrigin: 'catalog',
+                            durationMinutes: it.runtime || 120,
+                            countries: (it.countries || []).map(c => c.name).join(', '),
+                        }));
+                    }
                 } catch (e) {
                     fetchedItems = [];
                 }
@@ -1137,9 +1156,23 @@ function GenreScreen({ route, navigation }) {
 
             if (fetchedItems.length === 0 && pageNum === 1) {
                 try {
-                    const r = await fetch(`${API_BASE}/search?genre=${encodeURIComponent(g)}&live=false`);
-                    const j = await r.json();
-                    fetchedItems = j.results || [];
+                    // Fall back to catalog DB (always available, no live scrapers needed)
+                    const ctrl2 = new AbortController();
+                    const tid2 = setTimeout(() => ctrl2.abort(), 3500);
+                    const r = await fetch(`${API_BASE}/titles?genre=${encodeURIComponent(g.toLowerCase())}&sort=popularity&page=1&page_size=24`, { signal: ctrl2.signal });
+                    clearTimeout(tid2);
+                    if (r.ok) {
+                        const j = await r.json();
+                        fetchedItems = (j.items || []).map(it => ({
+                            id: it.id, slug: it.slug, title: it.title,
+                            type: it.type, year: it.year, rating: it.rating,
+                            poster: it.poster, backdrop: it.backdrop,
+                            overview: it.overview, runtime: it.runtime,
+                            source: 'catalog', sourceOrigin: 'catalog',
+                            durationMinutes: it.runtime || 120,
+                            genres: (it.genres || []).map(g => g.name).join(', '),
+                        }));
+                    }
                 } catch (e) {
                     fetchedItems = [];
                 }
