@@ -914,6 +914,15 @@ function WatchlistScreen({ navigation }) {
 function CountryScreen({ route, navigation }) {
     const parentParam = navigation.getParent()?.getState()?.routes?.find(r => r.name === 'Countries')?.params?.countryKey;
     const initialCountryKey = route?.params?.countryKey || parentParam || 'all';
+    // Local bucket → country-code map (must match the legacy COUNTRY_BUCKETS in backend)
+    const BUCKET_TO_CODE = {
+        'all': 'ALL', 'hollywood': 'US', 'bollywood': 'IN', 'pakistani': 'PK',
+        'korean': 'KR', 'turkish': 'TR', 'nigerian': 'NG', 'japanese': 'JP',
+        'chinese': 'CN', 'british': 'GB', 'french': 'FR', 'italian': 'IT',
+        'spanish': 'ES', 'german': 'DE', 'animation': '', 'horror': '',
+        'thriller': '', 'documentary': '', 'music': '', 'classic': '',
+        'scifi': '', 'romance': '', 'family': '', 'superhero': '',
+    };
     const { width } = useWindowDimensions();
     const numCols = width >= 1400 ? 6 : width >= 1024 ? 5 : width >= 768 ? 4 : width >= 480 ? 3 : 2;
     const [countries, setCountries] = useState([]);
@@ -980,7 +989,7 @@ function CountryScreen({ route, navigation }) {
                     const ctrl2 = new AbortController();
                     const tid2 = setTimeout(() => ctrl2.abort(), 3500);
                     // Country bucket keys like "pakistani" — try lowercase name as code first, fallback to slug matching
-                    const countryCode = COUNTRY_BUCKETS[cKey]?.code || '';
+                    const countryCode = BUCKET_TO_CODE[cKey] || '';
                     let url = `${API_BASE}/titles?sort=popularity&page=1&page_size=24`;
                     if (countryCode && countryCode !== 'ALL') {
                         url += `&country=${encodeURIComponent(countryCode)}`;
