@@ -221,6 +221,7 @@ def main():
             " overview, popularity, rating, rating_count, is_anime, status, metadata_state, "
             " last_verified_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (abs(hash(slugify(name))) % 10_000_000, item["id"], slugify(name),
+             name,
              "anime" if is_anime else "tv", year, first_air or None,
              (item.get("overview") or "")[:2000] or None,
              float(item.get("popularity") or 0), round(float(item.get("vote_average") or 0), 2),
