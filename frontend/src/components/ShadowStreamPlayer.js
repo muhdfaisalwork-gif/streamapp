@@ -309,6 +309,25 @@ export default function ShadowStreamPlayer({
     const [showEpisodeDrawer, setShowEpisodeDrawer] = useState(false);
     const [activeDrawerSeason, setActiveDrawerSeason] = useState(season || 1);
 
+    // The drawer's highlighted season used to be seeded once and then never
+    // followed the player, so switching episode by any other route (Next
+    // Episode, deep link) left the drawer on a stale season.
+    useEffect(() => {
+        if (season != null) setActiveDrawerSeason(season);
+    }, [season]);
+
+    // Season rows as the API actually returns them. Episodes carry no
+    // `season_number` of their own, so the season has to be resolved from the
+    // row that owns them. Episodes from different titles vary, so tolerate the
+    // field being present as a fallback.
+    const drawerSeasons = Array.isArray(seasons) ? seasons.filter(s => s && s.season_number != null) : [];
+    const drawerActiveSeasonRow =
+        drawerSeasons.find(s => s.season_number === activeDrawerSeason) || drawerSeasons[0] || null;
+    const drawerActiveSeasonNumber = drawerActiveSeasonRow ? drawerActiveSeasonRow.season_number : (season || 1);
+    const drawerEpisodes = (drawerActiveSeasonRow && Array.isArray(drawerActiveSeasonRow.episodes))
+        ? drawerActiveSeasonRow.episodes.filter(ep => ep && ep.episode_number != null)
+        : [];
+
     // HLS Quality levels
     const [qualityLevels, setQualityLevels] = useState([]);
     const [activeQualityIdx, setActiveQualityIdx] = useState(-1); // -1 = auto
@@ -953,10 +972,10 @@ export default function ShadowStreamPlayer({
                     </View>
 
                     {/* Season Tabs */}
-                    {seasons.length > 1 && (
+                    {drawerSeasons.length > 1 && (
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.drawerSeasonTabs}>
-                            {seasons.map(s => {
-                                const active = s.season_number === activeDrawerSeason;
+                            {drawerSeasons.map(s => {
+                                const active = s.season_number === drawerActiveSeasonNumber;
                                 return (
                                     <TouchableOpacity
                                         key={s.season_number}
@@ -964,7 +983,10 @@ export default function ShadowStreamPlayer({
                                         onPress={() => setActiveDrawerSeason(s.season_number)}
                                     >
                                         <Text style={[styles.drawerSeasonTabText, active && styles.drawerSeasonTabTextActive]}>
-                                            Season {s.season_number}
+                                            {s.season_number === 0 ? 'Specials' : `Season ${s.season_number}`}
+                                            {Array.isArray(s.episodes) && s.episodes.length > 0
+                                                ? `  (${s.episodes.length})`
+                                                : ''}
                                         </Text>
                                     </TouchableOpacity>
                                 );
@@ -974,16 +996,22 @@ export default function ShadowStreamPlayer({
 
                     {/* Episodes List */}
                     <ScrollView style={styles.drawerEpisodeList}>
-                        {((seasons.find(s => s.season_number === activeDrawerSeason) || seasons[0])?.episodes || []).map(ep => {
-                            const isCurrent = ep.season_number === season && ep.episode_number === episode;
+                        {drawerEpisodes.length === 0 ? (
+                            <Text style={styles.drawerEmpty}>
+                                No episode list came back for this season.
+                            </Text>
+                        ) : null}
+                        {drawerEpisodes.map(ep => {
+                            const epSeason = ep.season_number != null ? ep.season_number : drawerActiveSeasonNumber;
+                            const isCurrent = epSeason === season && ep.episode_number === episode;
                             return (
                                 <TouchableOpacity
-                                    key={ep.id || ep.episode_number}
+                                    key={`${epSeason}-${ep.episode_number}`}
                                     style={[styles.drawerEpCard, isCurrent && styles.drawerEpCardActive]}
                                     onPress={() => {
                                         setShowEpisodeDrawer(false);
                                         if (onSelectEpisode) {
-                                            onSelectEpisode(ep.season_number, ep.episode_number);
+                                            onSelectEpisode(epSeason, ep.episode_number);
                                         }
                                     }}
                                 >
@@ -1962,6 +1990,12 @@ const styles = StyleSheet.create({
     drawerEpisodeList: {
         flex: 1,
         padding: 12,
+    },
+    drawerEmpty: {
+        color: COLORS.textMuted,
+        fontSize: 12,
+        paddingVertical: 18,
+        textAlign: 'center',
     },
     drawerEpCard: {
         flexDirection: 'row',

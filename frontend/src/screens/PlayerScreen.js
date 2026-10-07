@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     SafeAreaView, ActivityIndicator, Platform, useWindowDimensions
@@ -24,12 +24,49 @@ export default function PlayerScreen({ route, navigation }) {
             (initialItem?.seasonCount != null && initialItem.seasonCount > 0) ||
             (Array.isArray(item?.seasons) && item.seasons.length > 0)
         ));
+    // On web the deep link is the only thing carrying season/episode on a cold
+    // load — the router does not map a bare query string into `route.params`,
+    // so `/play/slug?season=5&episode=7` used to silently boot S1E1. Read the
+    // URL directly and let the route param win when both are present.
+    const webQuery = useMemo(() => {
+        if (typeof window === 'undefined' || !window.location) return {};
+        try {
+            return new URLSearchParams(window.location.search || '');
+        } catch (e) {
+            return {};
+        }
+    }, []);
+
+    const initialSeason = routeSeason != null ? routeSeason : (webQuery.get ? webQuery.get('season') : null);
+    const initialEpisode = routeEpisode != null ? routeEpisode : (webQuery.get ? webQuery.get('episode') : null);
+
+    const parsedSeason = parseInt(initialSeason, 10);
+    const parsedEpisode = parseInt(initialEpisode, 10);
+
+    // Explicit season/episode wins over everything. It used to be gated behind
+    // `isTv`, but on a cold deep link there is no `item` yet, so `isTv` is
+    // false at init and the season collapsed to null — the fetch then set it to
+    // 1 and the requested episode was lost. So: use the explicit value if we
+    // have one, otherwise fall back to the item/TV default.
     const [currentSeason, setCurrentSeason] = useState(
-        isTv ? (routeSeason ? parseInt(routeSeason, 10) : (item?.season || 1)) : null
+        Number.isFinite(parsedSeason) ? parsedSeason : (isTv ? (item?.season || 1) : null)
     );
     const [currentEpisode, setCurrentEpisode] = useState(
-        isTv ? (routeEpisode ? parseInt(routeEpisode, 10) : (item?.episode || 1)) : null
+        Number.isFinite(parsedEpisode) ? parsedEpisode : (isTv ? (item?.episode || 1) : null)
     );
+
+    // Keep the address bar honest so a reload or a shared link lands on the
+    // episode actually being watched.
+    useEffect(() => {
+        if (typeof window === 'undefined' || !window.history?.replaceState) return;
+        if (!isTv || currentSeason == null || currentEpisode == null) return;
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('season') === String(currentSeason)
+            && url.searchParams.get('episode') === String(currentEpisode)) return;
+        url.searchParams.set('season', String(currentSeason));
+        url.searchParams.set('episode', String(currentEpisode));
+        window.history.replaceState({}, '', url.toString());
+    }, [isTv, currentSeason, currentEpisode]);
     const [seasons, setSeasons] = useState(item?.seasons || []);
     const [dubs, setDubs] = useState(
         initialItem?.audioLanguages ||
@@ -83,7 +120,10 @@ export default function PlayerScreen({ route, navigation }) {
         }
         fetchTitleData();
         return () => { cancelled = true; };
-    }, [item, slug, currentSeason, currentEpisode]);
+    // Season/episode used to be deps here, so every episode click refetched the
+    // whole title payload and re-set `seasons`, re-rendering the drawer
+    // mid-selection. Title metadata does not depend on the play position.
+    }, [item?.id, item?.slug, slug]);
 
     useRouteMeta('Player', {
         title: isTv && currentSeason
@@ -249,9 +289,20 @@ export default function PlayerScreen({ route, navigation }) {
 
     // Handle user selecting an episode from the in-player drawer
     const handleSelectEpisode = useCallback((seasonNum, episodeNum) => {
-        setCurrentSeason(seasonNum);
-        setCurrentEpisode(episodeNum);
-    }, []);
+        const s = parseInt(seasonNum, 10);
+        const e = parseInt(episodeNum, 10);
+        // Episode rows from the catalogue carry no season of their own. This
+        // used to be called with `undefined` and set the season to null, which
+        // drops `season` from the availability query and pins the player to
+        // S1E1 forever. Ignore anything non-numeric instead.
+        if (!Number.isFinite(s) || !Number.isFinite(e)) {
+            console.warn('[PlayerScreen] ignored episode selection', { seasonNum, episodeNum });
+            return;
+        }
+        if (s === currentSeason && e === currentEpisode) return;
+        setCurrentSeason(s);
+        setCurrentEpisode(e);
+    }, [currentSeason, currentEpisode]);
 
     // Handle auto-advancing or clicking "Next Episode"
     const handleNextEpisode = useCallback(() => {
