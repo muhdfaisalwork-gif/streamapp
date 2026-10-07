@@ -1,0 +1,48 @@
+{
+  "name": "ShadowStream — Free Movies & TV Shows",
+  "short_name": "ShadowStream",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "any",
+  "background_color": "#0d0d0d",
+  "theme_color": "#0d0d0d",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["entertainment", "video", "movies"],
+  "description": "Stream thousands of movies and TV shows ad-free across all your devices.",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    { "name": "Movies", "url": "/movies" },
+    { "name": "TV Shows", "url": "/tv" },
+    { "name": "Anime", "url": "/anime" },
+    { "name": "Search", "url": "/search" }
+  ]
+}

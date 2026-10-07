@@ -1,9 +1,17 @@
 // StreamApp Desktop Launcher — opens the deployed web app in the user's
-// default browser and adds itself to the system tray (Windows) or to the
-// menu bar (macOS). Packaged via `pkg` as StreamApp.exe.
+// default browser.
 //
 // Usage: streamapp-launcher.exe [--url=URL] [--no-tray] [--quit-after=N]
-// Default URL: https://ls7m73ztxvfc2.space.minimax.io
+// Default URL: https://ssmoviestvs.site
+//
+// This was the workers.dev developer link, which still resolves but is the
+// wrong place to send users: it is the raw Cloudflare hostname, not the brand
+// domain, so bookmarks and screenshots show an internal URL.
+//
+// NOTE: this used to write a StreamApp.url shortcut into the Windows Startup
+// folder on every launch. That is silent boot persistence with no user consent
+// and the file was never removed. It is gone. If auto-launch is wanted later it
+// belongs behind an explicit opt-in inside the app.
 'use strict';
 
 const { exec } = require('child_process');
@@ -13,7 +21,7 @@ const os = require('os');
 
 const APP_URL = (process.argv.find(a => a.startsWith('--url=')) || '').split('=')[1]
     || process.env.STREAMAPP_URL
-    || 'https://ls7m73ztxvfc2.space.minimax.io';
+    || 'https://ssmoviestvs.site';
 const NO_TRAY = process.argv.includes('--no-tray');
 const QUIT_AFTER = parseInt((process.argv.find(a => a.startsWith('--quit-after=')) || '').split('=')[1] || '0', 10);
 
@@ -41,20 +49,11 @@ function openBrowser(url) {
     });
 }
 
+// Auto-launch on boot was removed. See the note at the top of this file.
+// Launching a desktop app should not silently write to the Startup folder.
 function setupTray() {
-    // Best-effort: native Node has no built-in tray API. We rely on Windows
-    // shell + a minimal PowerShell snippet that adds an entry to the Startup
-    // group and pins the URL via the default browser's PWA install (Chrome
-    // will offer "Install StreamApp" once it loads).
-    if (process.platform !== 'win32') return;
-    const startupShortcut = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'StreamApp.url');
-    const shortcutContent = `[InternetShortcut]\nURL=${APP_URL}\nIconIndex=0\nIconFile=`;
-    try {
-        fs.writeFileSync(startupShortcut, shortcutContent);
-        log('Startup shortcut installed at', startupShortcut);
-    } catch (e) {
-        log('Startup shortcut failed:', e.message);
-    }
+    log('no tray integration (not supported for this build)');
+    return;
 }
 
 function startHeartbeat() {

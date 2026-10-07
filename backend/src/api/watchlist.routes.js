@@ -38,7 +38,47 @@ function getDb() {
 }
 
 function getUserId(req) {
-    return req.query.user_id || req.body?.user_id || req.headers['x-user-id'] || 'anonymous';
+    return req.query.user_id || req.body?.user_id || req.body?.userId || req.headers['x-user-id'] || 'anonymous';
+}
+
+/**
+ * Resolve a title identifier — accept either a numeric id or a slug.
+ * Returns the numeric id from the titles table, or null if not found.
+ * If the slug doesn't exist yet but the request includes title metadata,
+ * we upsert a placeholder row so the user_watchlist FK doesn't fail.
+ */
+function resolveTitleId(rawId, fallbackMeta) {
+    if (rawId == null) return null;
+    const trimmed = String(rawId).trim();
+    if (!trimmed) return null;
+
+    const db = getDb();
+    // Numeric id — use as-is.
+    if (/^\d+$/.test(trimmed)) {
+        const row = db.prepare('SELECT id FROM titles WHERE id = ?').get(Number(trimmed));
+        return row ? row.id : null;
+    }
+    // Slug — look up.
+    const row = db.prepare('SELECT id FROM titles WHERE slug = ?').get(trimmed);
+    if (row) return row.id;
+    // Not in catalog yet — best-effort upsert of a stub so the FK succeeds.
+    if (fallbackMeta) {
+        const m = fallbackMeta;
+        const slug = trimmed;
+        const insert = db.prepare(`
+            INSERT INTO titles (slug, title, type, year, poster, rating, popularity,
+                                is_anime, is_short_drama, data_quality_score, metadata_state, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'stub', strftime('%s','now'))
+        `);
+        insert.run(
+            slug, m.title || slug, m.type || 'movie',
+            m.year || null, m.poster || null, m.rating || null,
+            0, m.type === 'anime' ? 1 : 0, m.type === 'short_drama' ? 1 : 0
+        );
+        const r = db.prepare('SELECT id FROM titles WHERE slug = ?').get(slug);
+        return r ? r.id : null;
+    }
+    return null;
 }
 
 router.get('/watchlist', (req, res) => {
@@ -60,39 +100,67 @@ router.get('/watchlist', (req, res) => {
 router.post('/watchlist', (req, res) => {
     try {
         const uid = getUserId(req);
-        const title = req.body?.title;
-        if (!title || !title.id) {
-            return res.status(400).json({ error: 'missing_title_id' });
+        const titleObj = (req.body?.title && typeof req.body.title === 'object')
+            ? req.body.title
+            : {
+                id: req.body?.title_id || req.body?.titleId,
+                slug: req.body?.slug,
+                title: typeof req.body?.title === 'string' ? req.body.title : 'Untitled',
+                type: req.body?.type || 'movie',
+                year: req.body?.year,
+                poster: req.body?.poster,
+                rating: req.body?.rating
+            };
+
+        // Accept slug-only payloads: resolve the slug before the missing-id check.
+        const resolveKey = titleObj.id || titleObj.slug;
+        if (!resolveKey) {
+            return res.status(400).json({ error: 'missing_title_id_or_slug' });
         }
-        // Upsert the title record first (best-effort — may not have all fields).
-        const t = title;
-        getDb().prepare(`
-            INSERT INTO titles (id, slug, title, type, year, poster, rating, popularity, is_anime, is_short_drama, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'))
-            ON CONFLICT(id) DO UPDATE SET updated_at = strftime('%s','now')
-        `).run(
-            Number(t.id), t.slug || `t-${t.id}`, t.title || 'Untitled',
-            t.type || 'movie', t.year || null, t.poster || null, t.rating || null,
-            0, t.type === 'anime' ? 1 : 0, t.type === 'short_drama' ? 1 : 0
-        );
+        // Resolve slug → numeric id (also handles fresh-from-catalog rows).
+        const numericId = resolveTitleId(resolveKey, {
+            title: titleObj.title,
+            type: titleObj.type,
+            year: titleObj.year,
+            poster: titleObj.poster,
+            rating: titleObj.rating
+        });
+        if (!numericId) {
+            return res.status(404).json({ error: 'title_not_in_catalog', title_id: resolveKey });
+        }
+        // Optional: patch fields if the caller provided richer metadata.
+        if (titleObj.poster || titleObj.year || titleObj.rating || titleObj.title) {
+            getDb().prepare(`
+                UPDATE titles
+                SET poster = COALESCE(?, poster),
+                    year = COALESCE(?, year),
+                    rating = COALESCE(?, rating),
+                    title = COALESCE(?, title),
+                    updated_at = strftime('%s','now')
+                WHERE id = ?
+            `).run(titleObj.poster || null, titleObj.year || null,
+                   titleObj.rating || null, titleObj.title || null, numericId);
+        }
         getDb().prepare(`
             INSERT OR REPLACE INTO user_watchlist (user_id, title_id, added_at)
             VALUES (?, ?, strftime('%s','now'))
-        `).run(uid, Number(t.id));
-        res.json({ ok: true, user_id: uid, title_id: t.id });
+        `).run(uid, numericId);
+        res.json({ ok: true, user_id: uid, title_id: numericId });
     } catch (e) {
         res.status(500).json({ error: 'watchlist_add_failed', detail: e.message });
     }
 });
 
-router.delete('/watchlist', (req, res) => {
+router.delete(['/watchlist', '/watchlist/:titleId'], (req, res) => {
     try {
         const uid = getUserId(req);
-        const tid = req.query.title_id;
-        if (!tid) return res.status(400).json({ error: 'missing_title_id' });
+        const rawTid = req.params?.titleId || req.query?.title_id || req.query?.id;
+        if (!rawTid) return res.status(400).json({ error: 'missing_title_id' });
+        const numericId = resolveTitleId(rawTid, null);
+        if (!numericId) return res.status(404).json({ error: 'title_not_in_catalog', title_id: rawTid });
         getDb().prepare('DELETE FROM user_watchlist WHERE user_id = ? AND title_id = ?')
-            .run(uid, Number(tid));
-        res.json({ ok: true, user_id: uid, title_id: tid });
+            .run(uid, numericId);
+        res.json({ ok: true, user_id: uid, title_id: numericId });
     } catch (e) {
         res.status(500).json({ error: 'watchlist_remove_failed', detail: e.message });
     }
@@ -103,7 +171,7 @@ router.get('/history', (req, res) => {
         const uid = getUserId(req);
         const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 50));
         const rows = getDb().prepare(`
-            SELECT h.id, h.title_id, h.episode_id, h.position_sec, h.duration_sec, h.pct, h.completed, h.ts,
+            SELECT t.id AS id, h.title_id, h.id AS history_id, h.episode_id, h.position_sec, h.duration_sec, h.pct, h.completed, h.ts,
                    t.slug, t.title, t.type, t.year, t.poster, t.backdrop
             FROM user_history h
             JOIN titles t ON t.id = h.title_id
@@ -120,13 +188,27 @@ router.get('/history', (req, res) => {
 router.post('/history', (req, res) => {
     try {
         const uid = getUserId(req);
-        const { title_id, episode_id, position_sec, duration_sec, pct, completed } = req.body || {};
-        if (!title_id) return res.status(400).json({ error: 'missing_title_id' });
+        const raw_title_id = req.body?.title_id || req.body?.titleId || req.body?.slug;
+        const episode_id = req.body?.episode_id || req.body?.episodeId;
+        const position_sec = req.body?.position_sec ?? req.body?.currentTime ?? 0;
+        const duration_sec = req.body?.duration_sec ?? req.body?.duration ?? 0;
+        const pct = req.body?.pct ?? req.body?.progressPct ?? 0;
+        const completed = req.body?.completed || false;
+
+        if (!raw_title_id) return res.status(400).json({ error: 'missing_title_id_or_slug' });
+        const numericId = resolveTitleId(raw_title_id, {
+            title: req.body?.title,
+            type: req.body?.type,
+            year: req.body?.year,
+            poster: req.body?.poster,
+            rating: req.body?.rating
+        });
+        if (!numericId) return res.status(404).json({ error: 'title_not_in_catalog', title_id: raw_title_id });
         getDb().prepare(`
             INSERT INTO user_history
               (user_id, title_id, episode_id, position_sec, duration_sec, pct, completed, ts)
             VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%s','now'))
-        `).run(uid, Number(title_id), episode_id ? Number(episode_id) : null,
+        `).run(uid, numericId, episode_id ? Number(episode_id) : null,
                Number(position_sec) || 0, Number(duration_sec) || 0,
                Number(pct) || 0, completed ? 1 : 0);
         res.json({ ok: true });
@@ -135,19 +217,22 @@ router.post('/history', (req, res) => {
     }
 });
 
-router.delete('/history', (req, res) => {
+router.delete(['/history', '/history/:titleId'], (req, res) => {
     try {
         const uid = getUserId(req);
-        if (req.query.all === 'true') {
+        if (req.query.all === 'true' || req.query.clear === 'true') {
             getDb().prepare('DELETE FROM user_history WHERE user_id = ?').run(uid);
             return res.json({ ok: true, cleared: 'all' });
         }
-        if (req.query.id) {
-            getDb().prepare('DELETE FROM user_history WHERE user_id = ? AND id = ?')
-                .run(uid, Number(req.query.id));
-            return res.json({ ok: true, removed: req.query.id });
+        const rawTid = req.params?.titleId || req.query?.title_id || req.query?.id;
+        if (rawTid) {
+            const numericId = resolveTitleId(rawTid, null);
+            if (!numericId) return res.status(404).json({ error: 'title_not_in_catalog', title_id: rawTid });
+            getDb().prepare('DELETE FROM user_history WHERE user_id = ? AND title_id = ?')
+                .run(uid, numericId);
+            return res.json({ ok: true, removed: numericId });
         }
-        res.status(400).json({ error: 'specify ?all=true or ?id=N' });
+        res.status(400).json({ error: 'specify ?all=true or ?title_id=N' });
     } catch (e) {
         res.status(500).json({ error: 'history_delete_failed', detail: e.message });
     }

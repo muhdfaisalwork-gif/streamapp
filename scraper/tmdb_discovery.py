@@ -125,7 +125,8 @@ def get_language_id(conn: sqlite3.Connection, iso_code: str) -> Optional[int]:
 
 
 def upsert_discovered_title(conn: sqlite3.Connection, item: dict[str, Any], media_type: str,
-                             genre_map: dict[int, str], origin_country: Optional[str]) -> tuple[Optional[int], bool]:
+                             genre_map: dict[int, str], origin_country: Optional[str],
+                             status: str = "released") -> tuple[Optional[int], bool]:
     tmdb_id = item.get("id")
     if not tmdb_id:
         return None, False
@@ -167,7 +168,7 @@ def upsert_discovered_title(conn: sqlite3.Connection, item: dict[str, Any], medi
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (slug, title, item.get("original_title") or item.get("original_name"), final_type, year, date_str,
          item.get("vote_average"), item.get("vote_count", 0), item.get("popularity", 0), item.get("overview"),
-         poster, backdrop, tmdb_id, "released", is_anime, "stub", now, now),
+         poster, backdrop, tmdb_id, status, is_anime, "stub", now, now),
     )
     new_id = cur.lastrowid
 
