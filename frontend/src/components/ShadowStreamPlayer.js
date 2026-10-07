@@ -165,7 +165,7 @@ export default function ShadowStreamPlayer({
     const [showQualityMenu, setShowQualityMenu] = useState(false);
     const [showSubtitleMenu, setShowSubtitleMenu] = useState(false);
     const [showDubMenu, setShowDubMenu] = useState(false);
-    const [selectedDub, setSelectedDub] = useState('off');
+    const [availableAudioTracks, setAvailableAudioTracks] = useState([]);
     const [showServerMenu, setShowServerMenu] = useState(false);
     const [showPlayerMenu, setShowPlayerMenu] = useState(false);
     const [playerHandoffFailed, setPlayerHandoffFailed] = useState(false);
@@ -261,11 +261,41 @@ export default function ShadowStreamPlayer({
         return list;
     }, [normalizedDubs]);
 
-    const effectiveStreamUrl = useMemo(() => {
-        if (!streamUrl || selectedDub === 'off') return streamUrl;
-        const sep = streamUrl.includes('?') ? '&' : '?';
-        return `${streamUrl}${sep}lang=${encodeURIComponent(selectedDub)}`;
-    }, [streamUrl, selectedDub]);
+    // Dead code removed deliberately.
+    //
+    // This used to build `<iframe src={streamUrl}&lang=<code>>` when a dub was
+    // picked. It never worked. `lang` is not a parameter VidLink recognises —
+    // its API takes `multiLang`, and that flag only governs SUBTITLES: the
+    // response for this title is byte-identical with multiLang=0 and multiLang=1,
+    // and contains no audio track array at all, just one file per resolution.
+    // The picker was a menu that could not change anything.
+    //
+    // Real audio switching is possible in exactly one mode: direct, where the
+    // <video> is ours and hls.js exposes the manifest's audio tracks. Embed mode
+    // has no handle on the track list. See AUDIO_TRACKS below.
+
+    const [activeAudioIdx, setActiveAudioIdx] = useState(0);
+
+    const selectAudioTrack = useCallback((idx) => {
+        setActiveAudioIdx(idx);
+        const hls = hlsRef.current;
+        if (hls && Array.isArray(hls.audioTracks) && hls.audioTracks.length) {
+            hls.audioTrack = idx;
+            return;
+        }
+        // Progressive MP4: only a handful of browsers expose audioTracks.
+        const video = videoRef.current;
+        if (video && video.audioTracks && video.audioTracks.length) {
+            for (let i = 0; i < video.audioTracks.length; i++) {
+                video.audioTracks[i].enabled = i === idx;
+            }
+        }
+    }, []);
+
+    const setAudioTrackList = useCallback((tracks) => {
+        setAvailableAudioTracks(tracks);
+        setActiveAudioIdx(0);
+    }, []);
 
     // The provider notice is informational, not an error. Fade it out after a
     // few seconds so it never sits over the video like a stuck subtitle.
@@ -688,6 +718,20 @@ export default function ShadowStreamPlayer({
                 }));
                 setQualityLevels(levels);
                 video.play().catch(() => {});
+
+                // Alternate audio tracks ship in the manifest, so they only
+                // exist once MANIFEST_PARSED has fired. This is the one and only
+                // place in this player where a genuine audio choice is real.
+                const audioTracks = (data.audioTracks || []).map((t, i) => ({
+                    idx: i,
+                    label: t.name || t.lang || t.groupId || `Track ${i + 1}`,
+                    lang: t.lang || '',
+                }));
+                setAudioTrackList(audioTracks);
+            });
+
+            hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (event, data) => {
+                setActiveAudioIdx(data.id);
             });
 
             hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
@@ -856,9 +900,9 @@ export default function ShadowStreamPlayer({
                    to play inside one. Popup defence lives in adShield.js. */
                 <View style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
                     <iframe
-                        key={`${streamUrl}|${selectedDub}`}
+                        key={streamUrl}
                         ref={iframeRef}
-                        src={effectiveStreamUrl}
+                        src={streamUrl}
                         title="ShadowStream Built-in Player"
                         onLoad={handleEmbedLoaded}
                         onError={handleEmbedFailed}
@@ -1071,36 +1115,68 @@ export default function ShadowStreamPlayer({
                         </View>
                     )}
 
-                    {/* Audio info — providers choose the audio track inside their own player.
-                        No provider we use honours a language URL parameter (verified), so this
-                        panel is informational and never pretends to switch the track. */}
+                    {/* Audio.
+                        A real switcher appears only when the source genuinely
+                        carries more than one audio track (direct mode, via the
+                        HLS manifest). Embed mode gets the truth instead of a
+                        list of languages it cannot act on. */}
                     <View style={{ position: 'relative' }}>
                         <TouchableOpacity
                             style={styles.pillButton}
                             onPress={() => setShowDubMenu(!showDubMenu)}
                         >
-                            <Text style={styles.pillButtonText}>🌐 Audio</Text>
+                            <Text style={styles.pillButtonText}>
+                                🌐 Audio{availableAudioTracks.length > 1 ? ` (${availableAudioTracks.length})` : ''}
+                            </Text>
                         </TouchableOpacity>
                         {showDubMenu && (
                             <View style={[styles.popupMenu, styles.audioPopupMenu]}>
                                 <Text style={styles.popupMenuHeader}>Audio</Text>
                                 <ScrollView style={{ maxHeight: 260 }}>
-                                    {normalizedDubs.length > 0 ? (
+                                    {availableAudioTracks.length > 1 ? (
                                         <>
-                                            <Text style={styles.popupMenuSubheader}>Languages recorded for this title</Text>
-                                            {normalizedDubs.map(d => (
-                                                <View key={d.code} style={styles.popupMenuItem}>
-                                                    <Text style={styles.popupMenuText}>{d.label}</Text>
-                                                </View>
+                                            {availableAudioTracks.map(t => (
+                                                <TouchableOpacity
+                                                    key={t.idx}
+                                                    style={[styles.popupMenuItem, activeAudioIdx === t.idx && styles.popupMenuItemActive]}
+                                                    onPress={() => selectAudioTrack(t.idx)}
+                                                >
+                                                    <Text style={[styles.popupMenuText, activeAudioIdx === t.idx && styles.popupMenuTextActive]}>
+                                                        {activeAudioIdx === t.idx ? '▶ ' : ''}{t.label}
+                                                    </Text>
+                                                </TouchableOpacity>
                                             ))}
+                                            <View style={styles.popupMenuDivider} />
+                                            <Text style={styles.popupMenuHint}>
+                                                Switching restarts audio on some browsers. Playback position is kept.
+                                            </Text>
                                         </>
                                     ) : (
-                                        <Text style={styles.popupMenuHint}>No extra audio languages are recorded for this title.</Text>
+                                        <>
+                                            <Text style={styles.popupMenuHint}>
+                                                {isDirect
+                                                    ? 'This stream carries a single audio track, so there is nothing to switch between.'
+                                                    : 'This server streams one audio track. The language is baked into the file, so no dub can be selected here.'}
+                                            </Text>
+                                            <View style={styles.popupMenuDivider} />
+                                            {normalizedDubs.length > 0 && (
+                                                <>
+                                                    <Text style={styles.popupMenuSubheader}>Languages recorded for this title</Text>
+                                                    {normalizedDubs.map(d => (
+                                                        <Text key={d.code} style={styles.popupMenuHint}>
+                                                            • {d.label}
+                                                        </Text>
+                                                    ))}
+                                                    <View style={styles.popupMenuDivider} />
+                                                </>
+                                            )}
+                                            <Text style={styles.popupMenuHint}>
+                                                These are catalogue facts, not playback options. Subtitles are separate — use
+                                                the CC button in the player, or pick a different stream from ⚡ Server
+                                                which may carry a different audio track.
+                                            </Text>
+                                        </>
                                     )}
-                                    <View style={styles.popupMenuDivider} />
-                                    <Text style={styles.popupMenuHint}>
-                                        The audio track is chosen inside the video player. Open the ⚙️ Settings (or CC) icon at the bottom right of the video and look for an Audio option. If the server doesn't list one, this title only has its original audio on that server. Try another server from ⚡ Server.
-                                    </Text>
                                 </ScrollView>
                             </View>
                         )}
