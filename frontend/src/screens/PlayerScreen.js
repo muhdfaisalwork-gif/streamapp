@@ -232,9 +232,19 @@ export default function PlayerScreen({ route, navigation }) {
                 // on older titles. Showing all of them made the server list
                 // noise rather than a choice, so we keep a short, ordered list:
                 // one entry per provider (a provider offering five qualities is
-                // still one player to the user), ranked by how reliably they
-                // actually return a stream, and capped.
-                const PROVIDER_RANK = ['vidlink', 'vidsrc', '2embed', 'vidsrc_imdb', 'vid_src'];
+                // still one player to the user), ranked, and capped.
+                //
+                // Ranking, most-trusted first:
+                //   vidlink      vidlink.pro, TMDB-ID based
+                //   vidsrc       vidsrc.to,  TMDB-ID based
+                //   vidsrc_imdb  vidsrc.me,  IMDb-ID based — a different site on
+                //                a different ID system, not a duplicate of
+                //                vidsrc, and worth keeping as a fallback
+                //   2embed       demoted. Loaded fine but its inner player
+                //                returned "No content available for this title"
+                //                for Dexter S5E7, so it only earns a slot when a
+                //                title has nothing better.
+                const PROVIDER_RANK = ['vidlink', 'vidsrc', 'vidsrc_imdb', '2embed', 'vid_src'];
                 const MAX_MIRRORS = 3;
 
                 const byProvider = new Map();
