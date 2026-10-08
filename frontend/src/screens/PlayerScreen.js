@@ -227,7 +227,29 @@ export default function PlayerScreen({ route, navigation }) {
             );
 
             if (playableSources.length > 0) {
-                const mirrors = playableSources.map(a => ({
+                // The catalogue offers every scraper it happens to have on file —
+                // Dexter hands back four, and a long tail of half-dead embedders
+                // on older titles. Showing all of them made the server list
+                // noise rather than a choice, so we keep a short, ordered list:
+                // one entry per provider (a provider offering five qualities is
+                // still one player to the user), ranked by how reliably they
+                // actually return a stream, and capped.
+                const PROVIDER_RANK = ['vidlink', 'vidsrc', '2embed', 'vidsrc_imdb', 'vid_src'];
+                const MAX_MIRRORS = 3;
+
+                const byProvider = new Map();
+                for (const a of playableSources) {
+                    const key = String(a.source || a.sourceName || 'unknown').toLowerCase();
+                    if (!byProvider.has(key)) byProvider.set(key, a);
+                }
+                const ranked = Array.from(byProvider.values()).sort((a, b) => {
+                    const ra = PROVIDER_RANK.indexOf(String(a.source || '').toLowerCase());
+                    const rb = PROVIDER_RANK.indexOf(String(b.source || '').toLowerCase());
+                    return (ra === -1 ? 99 : ra) - (rb === -1 ? 99 : rb);
+                });
+                const kept = ranked.slice(0, MAX_MIRRORS);
+
+                const mirrors = kept.map(a => ({
                     label: a.sourceName || a.source || 'Mirror',
                     provider: a.source || 'embed',
                     url: a.kind === 'playback' ? (a.playbackUrl || a.url) : (a.url || a.external_url || a.playbackUrl),

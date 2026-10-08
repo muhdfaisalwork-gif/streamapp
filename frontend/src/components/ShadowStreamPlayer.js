@@ -167,6 +167,7 @@ export default function ShadowStreamPlayer({
     const [showDubMenu, setShowDubMenu] = useState(false);
     const [availableAudioTracks, setAvailableAudioTracks] = useState([]);
     const [showServerMenu, setShowServerMenu] = useState(false);
+    const [showLoadServerMenu, setShowLoadServerMenu] = useState(false);
     const [showPlayerMenu, setShowPlayerMenu] = useState(false);
     const [playerHandoffFailed, setPlayerHandoffFailed] = useState(false);
     const playerApps = availablePlayers();
@@ -206,6 +207,52 @@ export default function ShadowStreamPlayer({
         const next = (activeMirrorIdx + 1) % mirrorList.length;
         if (onSelectMirror) onSelectMirror(mirrorList[next], next);
     }, [mirrorList, activeMirrorIdx, onSelectMirror]);
+
+    // True while the provider has not finished handing us a playable frame.
+    // Covers both paths: our own decoder buffering, and the cross-origin
+    // iframe still loading.
+    //
+    // The iframe's onLoad is NOT a readiness signal. Verified two ways: on Slow
+    // 3G it fired while the provider was still showing "FETCHING DATA, PLEASE
+    // WAIT", and with the network cut it fired for a chrome-error "No
+    // internet" page. Neither tells us a frame ever arrived, and because the
+    // frame is cross-origin we cannot read inside it to check. So the line is
+    // driven by a fixed window on every source change rather than by a lie the
+    // browser tells us.
+    const [minLoading, setMinLoading] = useState(true);
+    useEffect(() => {
+        setMinLoading(true);
+        // 6s matches the embed watchdog below so the two hand off cleanly: the
+        // line owns the screen while we wait, the failover bar takes over the
+        // instant we give up. Overlapping them put the failover bar (zIndex 35)
+        // on top of this one (zIndex 30) and it swallowed the Change tap.
+        const t = setTimeout(() => setMinLoading(false), 6000);
+        return () => clearTimeout(t);
+    }, [streamUrl]);
+
+    // 'stalled' is deliberately excluded: that is the failover bar's job, and
+    // showing both at once collided and blocked the Change button.
+    const isLoadingContent = isDirect
+        ? (isBuffering || minLoading)
+        : (minLoading && embedState !== 'stalled');
+
+    // The picker lives INSIDE this bar, so the bar has to outlive the 6s timer
+    // once it is open — otherwise a menu opened at 5.9s unmounts itself a
+    // tenth of a second later, mid-tap.
+    const loadBarVisible = isLoadingContent || showLoadServerMenu;
+
+    // Elapsed seconds, so the line says "Loading… 12s" instead of a spinner
+    // that could mean anything. Resets every time the source changes.
+    const [loadSeconds, setLoadSeconds] = useState(0);
+    useEffect(() => {
+        if (!isLoadingContent) {
+            setLoadSeconds(0);
+            return undefined;
+        }
+        setLoadSeconds(0);
+        const t = setInterval(() => setLoadSeconds(s => s + 1), 1000);
+        return () => clearInterval(t);
+    }, [isLoadingContent, streamUrl]);
 
     // MUST be declared before the effect below reads it. It used to sit ~30
     // lines further down with the other player state, and because the effect's
@@ -1267,6 +1314,57 @@ export default function ShadowStreamPlayer({
                 ) : null}
             </View>
 
+            {/* Loading line — sits directly under the title bar so a slow provider is
+                never a silent black rectangle. It carries the switcher with it,
+                so the user can bail to another server without waiting out the
+                timeout or going back to the title bar. */}
+            {loadBarVisible ? (
+                <View style={styles.loadStatusBar} pointerEvents="box-none">
+                    <View style={styles.loadStatusLeft}>
+                        {isLoadingContent ? <ActivityIndicator size="small" color={COLORS.brand} /> : null}
+                        <Text style={styles.loadStatusText} numberOfLines={1}>
+                            {isLoadingContent
+                                ? `Loading ${sourceName || 'stream'}… ${loadSeconds}s`
+                                : `Playing via ${sourceName || 'this server'}`}
+                        </Text>
+                    </View>
+
+                    {mirrorList.length > 1 ? (
+                        <View style={styles.loadStatusMenuWrap}>
+                            <TouchableOpacity
+                                style={styles.loadStatusBtn}
+                                onPress={() => setShowLoadServerMenu(v => !v)}
+                                accessibilityLabel="Change stream server"
+                            >
+                                <Text style={styles.loadStatusBtnText}>
+                                    {showLoadServerMenu ? 'Close' : 'Change'}
+                                </Text>
+                            </TouchableOpacity>
+
+                            {showLoadServerMenu ? (
+                                <View style={styles.popupMenu}>
+                                    <Text style={styles.popupMenuHeader}>Change player</Text>
+                                    {mirrorList.map((m, idx) => (
+                                        <TouchableOpacity
+                                            key={idx}
+                                            style={[styles.popupMenuItem, idx === activeMirrorIdx && styles.popupMenuItemActive]}
+                                            onPress={() => {
+                                                setShowLoadServerMenu(false);
+                                                if (onSelectMirror) onSelectMirror(m, idx);
+                                            }}
+                                        >
+                                            <Text style={[styles.popupMenuText, idx === activeMirrorIdx && styles.popupMenuTextActive]}>
+                                                {idx === activeMirrorIdx ? '▶ ' : ''}{m.label}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            ) : null}
+                        </View>
+                    ) : null}
+                </View>
+            ) : null}
+
             {!isDirect && embedState === 'stalled' && mirrorList && mirrorList.length > 1 ? (
                 <View style={styles.failoverBar}>
                     <Text style={styles.failoverText}>
@@ -1627,6 +1725,52 @@ const styles = StyleSheet.create({
         marginLeft: 8,
     },
     failoverBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+
+    // Slim line under the title bar. Deliberately not the failover bar: that
+    // one is a modal-looking block that only appears on timeout, and it sits at
+    // top:60 which collides with this. This is the "still working on it" line.
+    loadStatusBar: {
+        position: 'absolute',
+        top: 56,
+        left: 12,
+        right: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: 'rgba(16, 16, 20, 0.92)',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.14)',
+        paddingVertical: 7,
+        paddingLeft: 12,
+        paddingRight: 7,
+        zIndex: 30,
+    },
+    loadStatusLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        minWidth: 0,
+        marginRight: 10,
+    },
+    loadStatusText: {
+        color: '#E6E6EC',
+        fontSize: 12,
+        fontWeight: '600',
+        marginLeft: 8,
+        flexShrink: 1,
+    },
+    loadStatusMenuWrap: {
+        position: 'relative',
+        flexShrink: 0,
+    },
+    loadStatusBtn: {
+        backgroundColor: COLORS.brand,
+        borderRadius: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+    },
+    loadStatusBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
     noticeBar: {
         position: 'absolute',
         top: 10,
