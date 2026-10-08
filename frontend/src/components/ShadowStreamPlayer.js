@@ -192,13 +192,21 @@ export default function ShadowStreamPlayer({
     }, []);
 
     // Reset the watchdog whenever the active mirror changes.
+    //
+    // 20s, not 6s. Providers chain nested iframes — VidSrc (IMDb) goes
+    // vidsrc.me -> vidsrc.sh -> cloudorchestranova.com, three hops — so the
+    // OUTER frame's onLoad does not fire until the whole chain settles.
+    // Measured cold on Dexter S5E7: onLoad landed at ~19s. At 6s we painted
+    // "This server isn't responding" over a stream that then played fine, and
+    // at 12s we still beat it by 7s. Since we cannot read inside a
+    // cross-origin frame, the only honest option is a long leash.
     useEffect(() => {
         setEmbedState('loading');
         if (embedTimer.current) clearTimeout(embedTimer.current);
         embedTimer.current = setTimeout(() => {
             setEmbedState((prev) => (prev === 'loading' ? 'stalled' : prev));
-        }, 6000);
-        return () => { if (embedTimer.current) clearTimeout(embedTimer.current); };
+        }, 20000);
+        return () => { if (embedTimer.current) { clearTimeout(embedTimer.current); embedTimer.current = null; } };
     }, [streamUrl]);
 
     const tryNextMirror = useCallback(() => {
@@ -207,6 +215,17 @@ export default function ShadowStreamPlayer({
         const next = (activeMirrorIdx + 1) % mirrorList.length;
         if (onSelectMirror) onSelectMirror(mirrorList[next], next);
     }, [mirrorList, activeMirrorIdx, onSelectMirror]);
+
+    // The watchdog firing does not mean the stream is dead — on a three-hop
+    // provider it usually just means we ran out of patience first. Give the
+    // user a way to say "it's still coming" instead of only "give up".
+    const keepWaiting = useCallback(() => {
+        setEmbedState('loading');
+        if (embedTimer.current) clearTimeout(embedTimer.current);
+        embedTimer.current = setTimeout(() => {
+            setEmbedState((prev) => (prev === 'loading' ? 'stalled' : prev));
+        }, 20000);
+    }, []);
 
     // True while the provider has not finished handing us a playable frame.
     // Covers both paths: our own decoder buffering, and the cross-origin
@@ -222,19 +241,22 @@ export default function ShadowStreamPlayer({
     const [minLoading, setMinLoading] = useState(true);
     useEffect(() => {
         setMinLoading(true);
-        // 6s matches the embed watchdog below so the two hand off cleanly: the
-        // line owns the screen while we wait, the failover bar takes over the
-        // instant we give up. Overlapping them put the failover bar (zIndex 35)
-        // on top of this one (zIndex 30) and it swallowed the Change tap.
-        const t = setTimeout(() => setMinLoading(false), 6000);
+        // 8s floor: onLoad is not a readiness signal (it fires while the
+        // provider is still showing "FETCHING DATA, PLEASE WAIT"), so the line
+        // has to hold for a while on its own.
+        const t = setTimeout(() => setMinLoading(false), 8000);
         return () => clearTimeout(t);
     }, [streamUrl]);
 
     // 'stalled' is deliberately excluded: that is the failover bar's job, and
     // showing both at once collided and blocked the Change button.
+    //
+    // The line also stays up past the 8s floor until the iframe finally loads,
+    // so there is no silent gap between the line disappearing and the 12s
+    // watchdog firing.
     const isLoadingContent = isDirect
         ? (isBuffering || minLoading)
-        : (minLoading && embedState !== 'stalled');
+        : ((minLoading || embedState === 'loading') && embedState !== 'stalled');
 
     // The picker lives INSIDE this bar, so the bar has to outlive the 6s timer
     // once it is open — otherwise a menu opened at 5.9s unmounts itself a
@@ -1368,8 +1390,11 @@ export default function ShadowStreamPlayer({
             {!isDirect && embedState === 'stalled' && mirrorList && mirrorList.length > 1 ? (
                 <View style={styles.failoverBar}>
                     <Text style={styles.failoverText}>
-                        This server isn&apos;t responding.
+                        Still nothing after 20s. This server may not have this episode.
                     </Text>
+                    <TouchableOpacity style={styles.failoverBtn} onPress={keepWaiting}>
+                        <Text style={styles.failoverBtnText}>Keep waiting</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.failoverBtn} onPress={tryNextMirror}>
                         <Text style={styles.failoverBtnText}>Try next server</Text>
                     </TouchableOpacity>
