@@ -1,0 +1,11 @@
+import sqlite3
+con = sqlite3.connect('scraper/catalog.db')
+print('New titles (id > 110050) breakdown:')
+print('  total:', con.execute('SELECT COUNT(*) FROM titles WHERE id > 110050').fetchone()[0])
+print('  with imdb_id:', con.execute('SELECT COUNT(*) FROM titles WHERE id > 110050 AND imdb_id IS NOT NULL').fetchone()[0])
+print('  with any playback availability:')
+print('   ', con.execute("SELECT COUNT(DISTINCT t.id) FROM titles t JOIN availability a ON a.title_id=t.id WHERE t.id > 110050 AND a.kind='playback'").fetchone()[0])
+print('  with moviebox playback:')
+print('   ', con.execute("SELECT COUNT(DISTINCT t.id) FROM titles t JOIN availability a ON a.title_id=t.id WHERE t.id > 110050 AND a.source_id=(SELECT id FROM sources WHERE slug='moviebox')").fetchone()[0])
+print('  with all 9 imdb-requiring embeds:')
+print('   ', con.execute("SELECT COUNT(*) FROM (SELECT t.id FROM titles t JOIN availability a ON a.title_id=t.id WHERE t.id > 110050 AND a.source_id IN (SELECT id FROM sources WHERE slug IN ('vidsrc','superembed','multiembed','2embed','flixhq','gomovies','embedsu','cinezone','warezcdn')) GROUP BY t.id HAVING COUNT(DISTINCT a.source_id) = 9)").fetchone()[0])

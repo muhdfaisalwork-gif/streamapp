@@ -409,97 +409,63 @@ router.get('/search', async (req, res) => {
 });
 
 router.post('/stream', async (req, res) => {
-    const { url, sourceName, season, episode, tmdbId, imdbId } = req.body;
-    if (!url && !tmdbId && !imdbId) {
-        return res.status(400).json({ error: '"url", "tmdbId", or "imdbId" is required' });
+    const { url, sourceName, season, episode, tmdbId, imdbId, title, type, slug } = req.body;
+    if (!url && !tmdbId && !imdbId && !title) {
+        return res.status(400).json({ error: '"url", "tmdbId", "imdbId", or "title" is required' });
     }
 
     try {
-        const urlStr = url || '';
-        const tId = tmdbId || (urlStr.match(/(?:tmdb[:/-]|movie\/|tv\/)(\d+)/) || [])[1] || (urlStr.startsWith('m123-') ? urlStr.replace('m123-', '') : null);
-        const iId = imdbId || (urlStr.match(/(tt\d{6,})/) || [])[1];
+        const CATALOG_UPSTREAM = process.env.CATALOG_UPSTREAM || 'http://127.0.0.1:7801';
 
-        const mirrors = [];
-        if (tId) {
-            if (season && episode) {
-                mirrors.push({ label: 'VidSrc.me', provider: 'vidsrc', url: `https://vidsrc.me/embed/tv?tmdb=${tId}&season=${season}&episode=${episode}`, quality: '1080p', format: 'embed' });
-                mirrors.push({ label: 'SuperEmbed', provider: 'superembed', url: `https://multiembed.mov/?video_id=${tId}&tmdb=1&s=${season}&e=${episode}`, quality: '1080p', format: 'embed' });
-                mirrors.push({ label: 'VidSrc.to', provider: 'vidsrc', url: `https://vidsrc.to/embed/tv/${tId}/${season}/${episode}`, quality: '1080p', format: 'embed' });
-                mirrors.push({ label: '2Embed', provider: '2embed', url: `https://www.2embed.cc/embedtv/${tId}&s=${season}&e=${episode}`, quality: '720p', format: 'embed' });
-            } else {
-                mirrors.push({ label: 'VidSrc.me', provider: 'vidsrc', url: `https://vidsrc.me/embed/movie?tmdb=${tId}`, quality: '1080p', format: 'embed' });
-                mirrors.push({ label: 'SuperEmbed', provider: 'superembed', url: `https://multiembed.mov/?video_id=${tId}&tmdb=1`, quality: '1080p', format: 'embed' });
-                mirrors.push({ label: 'VidSrc.to', provider: 'vidsrc', url: `https://vidsrc.to/embed/movie/${tId}`, quality: '1080p', format: 'embed' });
-                mirrors.push({ label: '2Embed', provider: '2embed', url: `https://www.2embed.cc/embed/${tId}`, quality: '720p', format: 'embed' });
-            }
-        }
-        if (iId) {
-            if (season && episode) {
-                if (!tId) mirrors.push({ label: 'VidSrc.me (IMDb)', provider: 'vidsrc', url: `https://vidsrc.me/embed/tv?imdb=${iId}&season=${season}&episode=${episode}`, quality: '1080p', format: 'embed' });
-                mirrors.push({ label: 'SuperEmbed (IMDb)', provider: 'superembed', url: `https://multiembed.mov/?video_id=${iId}&s=${season}&e=${episode}`, quality: '1080p', format: 'embed' });
-                mirrors.push({ label: '2Embed (IMDb)', provider: '2embed', url: `https://www.2embed.cc/embedtv/${iId}&s=${season}&e=${episode}`, quality: '720p', format: 'embed' });
-            } else {
-                if (!tId) mirrors.push({ label: 'VidSrc.me (IMDb)', provider: 'vidsrc', url: `https://vidsrc.me/embed/movie?imdb=${iId}`, quality: '1080p', format: 'embed' });
-                mirrors.push({ label: 'SuperEmbed (IMDb)', provider: 'superembed', url: `https://multiembed.mov/?video_id=${iId}`, quality: '1080p', format: 'embed' });
-                mirrors.push({ label: '2Embed (IMDb)', provider: '2embed', url: `https://www.2embed.cc/embed/${iId}`, quality: '720p', format: 'embed' });
-            }
-        }
-
-        const cleanTitle = (req.body.title || '').replace(/\s*-\s*S\d+E\d+.*$/i, '').trim();
-        if (cleanTitle) {
-            const ytQuery = season && episode
-                ? `${cleanTitle} Episode ${episode} full episode HD`
-                : `${cleanTitle} full movie HD`;
-            mirrors.push({
-                label: 'YouTube (Official HD)',
-                provider: 'youtube',
-                url: `https://www.youtube-nocookie.com/embed?listType=search&list=${encodeURIComponent(ytQuery)}`,
-                quality: '1080p',
-                format: 'embed'
-            });
-        }
-
-        // 1. Try registered scraper
-        const scraper = scrapers.find(s => s.sourceName === sourceName);
-        if (scraper && url) {
-            const streamUrl = await scraper.extractStream(url, season, episode);
-            if (streamUrl) {
-                return res.json({ streamUrl, status: 'success', source: sourceName, season, episode, streams: mirrors.length > 0 ? mirrors : [{ label: sourceName, provider: 'scraper', url: streamUrl, quality: '1080p', format: 'embed' }] });
+        // Look up REAL, verified-legal availability from the catalog service.
+        // Never construct a playback URL ourselves — only serve what's actually
+        // recorded as available from a lawful source (Archive.org, LegalCatalog, etc).
+        if (tmdbId) {
+            try {
+                const response = await fetch(`${CATALOG_UPSTREAM}/api/v1/title/tmdb/${tmdbId}/availability`, {
+                    signal: AbortSignal.timeout(5000)
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    const wantsEpisode = !!(season && episode);
+                    const availability = (data.availability || []).filter(entry =>
+                        entry.sourceIsLegal &&
+                        entry.status === 'available' &&
+                        entry.kind === 'playback' &&
+                        (entry.playbackUrl || entry.url) &&
+                        (wantsEpisode ? !!entry.episodeId : !entry.episodeId)
+                    );
+                    if (availability.length > 0) {
+                        const best = availability[0];
+                        const streams = availability.map(entry => ({
+                            label: entry.sourceName,
+                            provider: entry.source,
+                            url: entry.playbackUrl || entry.url,
+                            quality: (entry.quality && entry.quality[0]) || 'auto',
+                            format: (entry.format && entry.format[0]) || 'video'
+                        }));
+                        return res.json({ streamUrl: best.playbackUrl || best.url, status: 'success', source: best.sourceName, season, episode, streams });
+                    }
+                }
+            } catch (error) {
+                console.warn('[stream] catalog-service lookup failed:', error.message);
             }
         }
 
-        // 2. Try live service resolver
-        try {
-            const liveStream = await liveClient.resolve(sourceName, url || tmdbId || imdbId, season, episode);
-            if (liveStream && (liveStream.startsWith('http://') || liveStream.startsWith('https://'))) {
-                return res.json({ streamUrl: liveStream, status: 'success', source: sourceName || 'live', season, episode, streams: mirrors });
+        // LegalCatalog: a hand-curated fallback of real, verified public-domain/CC
+        // streams (Blender Open Movies, Internet Archive) — not a pirate scraper.
+        if (sourceName === 'LegalCatalog' && url) {
+            try {
+                const streamUrl = await legalCatalog.extractStream(url, season, episode);
+                if (streamUrl) {
+                    return res.json({ streamUrl, status: 'success', source: 'LegalCatalog', season, episode, streams: [{ label: 'LegalCatalog', provider: 'legalcatalog', url: streamUrl, quality: '1080p', format: 'embed' }] });
+                }
+            } catch (error) {
+                console.warn('[stream] legalCatalog extraction error:', error.message);
             }
-        } catch (e) {}
-
-        // 3. Return primary mirror if generated
-        if (mirrors.length > 0) {
-            return res.json({
-                streamUrl: mirrors[0].url,
-                status: 'success',
-                source: mirrors[0].label,
-                season,
-                episode,
-                streams: mirrors
-            });
         }
 
-        if (urlStr.startsWith('http://') || urlStr.startsWith('https://')) {
-            return res.json({
-                streamUrl: urlStr,
-                status: 'success',
-                source: sourceName || 'Direct',
-                season,
-                episode,
-                streams: [{ label: sourceName || 'Direct', provider: 'direct', url: urlStr, quality: '1080p', format: 'embed' }]
-            });
-        }
-
-        res.status(404).json({ error: 'No stream found for this title', status: 'failed' });
+        res.status(404).json({ error: 'No lawfully verified source found for this title', status: 'unavailable', streams: [] });
     } catch (error) {
         console.error('[stream] error:', error);
         res.status(500).json({ error: 'Internal server error during stream extraction' });
@@ -692,20 +658,18 @@ router.get('/tv/:tmdbId/episodes', async (req, res) => {
 
         const buildEpSources = (epNum) => {
             const sources = [];
-            if (actualTmdb) {
-                sources.push({ label: 'VidSrc.me', provider: 'vidsrc', url: `https://vidsrc.me/embed/tv?tmdb=${actualTmdb}&season=${seasonNum}&episode=${epNum}`, quality: '1080p', format: 'embed' });
-            }
-            if (actualImdb) {
-                sources.push({ label: 'VidSrc.me', provider: 'vidsrc', url: `https://vidsrc.me/embed/tv?imdb=${actualImdb}&season=${seasonNum}&episode=${epNum}`, quality: '1080p', format: 'embed' });
-            }
+            // Cleanest mirrors first. VidSrc.me LAST because it injects histats + ad overlays.
             sources.push({ label: 'SuperEmbed', provider: 'superembed', url: `https://multiembed.mov/?video_id=${actualImdb || actualTmdb || tmdbId}&s=${seasonNum}&e=${epNum}`, quality: '1080p', format: 'embed' });
             if (actualTmdb) {
-                sources.push({ label: 'VidSrc.to', provider: 'vidsrc', url: `https://vidsrc.to/embed/tv/${actualTmdb}/${seasonNum}/${epNum}`, quality: '1080p', format: 'embed' });
                 sources.push({ label: '2Embed', provider: '2embed', url: `https://www.2embed.cc/embedtv/${actualTmdb}&s=${seasonNum}&e=${epNum}`, quality: '720p', format: 'embed' });
+                sources.push({ label: 'VidSrc.to', provider: 'vidsrc', url: `https://vidsrc.to/embed/tv/${actualTmdb}/${seasonNum}/${epNum}`, quality: '1080p', format: 'embed' });
+                sources.push({ label: 'VidSrc.me', provider: 'vidsrc', url: `https://vidsrc.me/embed/tv?tmdb=${actualTmdb}&season=${seasonNum}&episode=${epNum}`, quality: '1080p', format: 'embed' });
             } else if (actualImdb) {
                 sources.push({ label: '2Embed', provider: '2embed', url: `https://www.2embed.cc/embedtv/${actualImdb}&s=${seasonNum}&e=${epNum}`, quality: '720p', format: 'embed' });
+                sources.push({ label: 'VidSrc.me', provider: 'vidsrc', url: `https://vidsrc.me/embed/tv?imdb=${actualImdb}&season=${seasonNum}&episode=${epNum}`, quality: '1080p', format: 'embed' });
             }
             if (resolvedTitle) {
+                // YouTube No-Cookie appended LAST = opt-in zero-ad fallback.
                 sources.push({
                     label: 'YouTube (Official HD)',
                     provider: 'youtube',

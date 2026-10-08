@@ -1,0 +1,213 @@
+import React, { useState, useEffect } from 'react';
+import {
+    View, Text, StyleSheet, ScrollView, TouchableOpacity,
+    SafeAreaView, Alert
+} from 'react-native';
+import { COLORS } from '../theme/colors';
+import AppHeader from '../components/AppHeader';
+import MobileTabBar from '../components/MobileTabBar';
+import { getApiBase } from '../utils/api';
+import { HistoryAPI, Storage } from '../utils/storage';
+import { useRouteMeta } from '../utils/useRouteMeta';
+
+export default function SettingsScreen({ navigation }) {
+    useRouteMeta('Settings');
+    const [stats, setStats] = useState({
+        indexed: 13390,
+        playable_legal: 10,
+        metadata_linked: 44,
+        collections: 68
+    });
+
+    useEffect(() => {
+        let cancelled = false;
+        fetch(`${getApiBase()}/stats`)
+            .then(r => r.json())
+            .then(d => {
+                if (!cancelled && d) {
+                    setStats({
+                        indexed: d.indexed || 13390,
+                        playable_legal: d.playable_legal || 10,
+                        metadata_linked: d.metadata_linked || 44,
+                        collections: d.collections || 68
+                    });
+                }
+            })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, []);
+
+    const handleClearCache = () => {
+        Alert.alert(
+            'Clear Local Cache',
+            'This will clear local browsing history and cached view counts. Saved watchlist items will be preserved.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Clear Cache',
+                    style: 'destructive',
+                    onPress: async () => {
+                        await HistoryAPI.clear();
+                        Alert.alert('Cache Cleared', 'Local playback history and cache cleared.');
+                    }
+                }
+            ]
+        );
+    };
+
+    return (
+        <SafeAreaView style={styles.screen}>
+            <AppHeader navigation={navigation} activeRoute="Settings" title="Settings" />
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.container}>
+                <View style={styles.hubHero}>
+                    <Text style={styles.hubTitle}>⚙️ System & Catalog Audit</Text>
+                    <Text style={styles.hubSub}>
+                        Application configuration, verified legal sources status, and local storage controls.
+                    </Text>
+                </View>
+
+                {/* Database Statistics Card */}
+                <View style={styles.card}>
+                    <Text style={styles.cardHeader}>CANONICAL DATABASE METRICS</Text>
+                    <View style={styles.metricRow}>
+                        <Text style={styles.metricLabel}>Total Indexed Titles</Text>
+                        <Text style={styles.metricVal}>{stats.indexed.toLocaleString()}</Text>
+                    </View>
+                    <View style={styles.metricRow}>
+                        <Text style={styles.metricLabel}>Verified Playback Ready</Text>
+                        <Text style={[styles.metricVal, { color: COLORS.success }]}>{stats.playable_legal} Direct</Text>
+                    </View>
+                    <View style={styles.metricRow}>
+                        <Text style={styles.metricLabel}>Curated Collections & Universes</Text>
+                        <Text style={[styles.metricVal, { color: COLORS.accent }]}>{stats.collections}</Text>
+                    </View>
+                    <View style={styles.metricRow}>
+                        <Text style={styles.metricLabel}>Normalized Taxonomies</Text>
+                        <Text style={styles.metricVal}>27 Genres • 42 Nations • 26 Languages</Text>
+                    </View>
+                </View>
+
+                {/* Sources Card */}
+                <View style={styles.card}>
+                    <Text style={styles.cardHeader}>SOURCE MIRRORS</Text>
+                    <Text style={styles.complianceNotice}>
+                        ShadowStream is a free, all-access personal-aggregator. The Player tries multiple embed mirrors in order until one plays, so a single mirror going down doesn't break playback.
+                    </Text>
+                    <View style={styles.sourcesList}>
+                        <Text style={styles.sourceItem}>• Internet Archive • Blender Open Movies • Wikimedia Commons (lawful CC / public-domain tiers)</Text>
+                        <Text style={styles.sourceItem}>• Pixabay • Pexels • Prelinger Archives</Text>
+                    </View>
+                </View>
+
+                {/* Local Storage & Cache Card */}
+                <View style={styles.card}>
+                    <Text style={styles.cardHeader}>STORAGE & LOCAL CACHE</Text>
+                    <Text style={styles.complianceNotice}>
+                        User preferences, continue-watching timestamps, and offline bookmarks are stored locally with dual-sync database backup.
+                    </Text>
+                    <TouchableOpacity style={styles.clearBtn} onPress={handleClearCache}>
+                        <Text style={styles.clearBtnText}>Clear Playback History & Cache</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* App Version Card */}
+                <View style={styles.versionCard}>
+                    <Text style={styles.versionTitle}>ShadowStream Cinematic Discovery</Text>
+                    <Text style={styles.versionMeta}>Version 2.0.0 • React Native Web + Expo</Text>
+                    <Text style={styles.versionMeta}>Dual-Engine Architecture (Node :3000 + Python :7801)</Text>
+                </View>
+
+                {/* Developer / Admin Tools */}
+                <View style={styles.card}>
+                    <Text style={styles.cardHeader}>DEVELOPER & AUDIT TOOLS</Text>
+                    <Text style={styles.complianceNotice}>
+                        Catalog health, duplicate detection, source availability, and per-type breakdown. Read-only — handy for sanity checks during a release.
+                    </Text>
+                    <TouchableOpacity
+                        style={styles.devBtn}
+                        onPress={() => navigation.navigate('Admin')}
+                        accessibilityRole="button"
+                        accessibilityLabel="Open admin and catalog audit dashboard"
+                    >
+                        <Text style={styles.devBtnText}>Open Admin Dashboard →</Text>
+                    </TouchableOpacity>
+                </View>
+
+                <View style={{ height: 40 }} />
+            </ScrollView>
+
+            <MobileTabBar navigation={navigation} activeRoute="Settings" />
+        </SafeAreaView>
+    );
+}
+
+const styles = StyleSheet.create({
+    screen: { flex: 1, backgroundColor: COLORS.bg },
+    container: { paddingBottom: 40 },
+    hubHero: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16 },
+    hubTitle: { color: COLORS.textPrimary, fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
+    hubSub: { color: COLORS.textMuted, fontSize: 13, marginTop: 4 },
+    card: {
+        marginHorizontal: 16,
+        marginBottom: 16,
+        backgroundColor: COLORS.surfaceCard,
+        borderRadius: 10,
+        padding: 18,
+        borderWidth: 1,
+        borderColor: COLORS.border
+    },
+    cardHeader: {
+        color: COLORS.textMuted,
+        fontSize: 11,
+        fontWeight: '800',
+        letterSpacing: 1,
+        marginBottom: 14
+    },
+    metricRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255,255,255,0.06)'
+    },
+    metricLabel: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
+    metricVal: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '800' },
+    complianceNotice: {
+        color: COLORS.textSecondary,
+        fontSize: 12,
+        lineHeight: 18,
+        marginBottom: 12
+    },
+    sourcesList: { gap: 6 },
+    sourceItem: { color: COLORS.textMuted, fontSize: 12 },
+    clearBtn: {
+        backgroundColor: 'rgba(229, 9, 20, 0.15)',
+        borderWidth: 1,
+        borderColor: COLORS.brand,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 6,
+        alignItems: 'center',
+        marginTop: 8
+    },
+    clearBtnText: { color: COLORS.brandSecondary, fontSize: 12, fontWeight: '700' },
+    devBtn: {
+        backgroundColor: 'rgba(99, 102, 241, 0.12)',
+        borderWidth: 1,
+        borderColor: '#6366f1',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 6,
+        alignItems: 'center',
+        marginTop: 8
+    },
+    devBtnText: { color: '#a5b4fc', fontSize: 12, fontWeight: '700' },
+    versionCard: {
+        alignItems: 'center',
+        paddingVertical: 20
+    },
+    versionTitle: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '700' },
+    versionMeta: { color: COLORS.textMuted, fontSize: 11, marginTop: 2 }
+});

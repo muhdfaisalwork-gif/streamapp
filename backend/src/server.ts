@@ -1361,18 +1361,17 @@ export class StreamingServer {
 </body>
 </html>`;
   }
-  }
 
-  listen(port = 4000, host = '0.0.0.0'): Promise<void> {
-    return new Promise(resolve => {
+  listen(port = 4000, host = '0.0.0.0') {
+    return new Promise<void>((resolve) => {
       this.server.listen(port, host, () => {
         resolve();
       });
     });
   }
 
-  close(): Promise<void> {
-    return new Promise(resolve => {
+  close() {
+    return new Promise<void>((resolve) => {
       this.db.close();
       this.server.close(() => resolve());
     });

@@ -12,7 +12,9 @@ const CATALOG_UPSTREAM = process.env.CATALOG_UPSTREAM || 'http://127.0.0.1:7801'
 
 function proxy(path) {
     return (req, res) => {
-        const url = new URL(CATALOG_UPSTREAM + path + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''));
+        // Use the full original URL so sub-paths (e.g. /collections/{slug}) are preserved.
+        // Strip only the host prefix; keep query string.
+        const url = new URL(CATALOG_UPSTREAM + req.originalUrl);
         const transport = url.protocol === 'https:' ? https : http;
         const opts = {
             method: req.method,
@@ -28,7 +30,12 @@ function proxy(path) {
         upstream.on('error', (e) => {
             res.status(502).json({ error: 'catalog_upstream_error', detail: e.message, upstream: CATALOG_UPSTREAM });
         });
-        req.pipe(upstream);
+        // For GET, we don't need to pipe the request body.
+        if (req.method === 'GET' || req.method === 'HEAD') {
+            upstream.end();
+        } else {
+            req.pipe(upstream);
+        }
     };
 }
 
@@ -37,10 +44,18 @@ function proxy(path) {
 // continue to serve legacy shapes from the Node backend (so the existing
 // frontend screens don't break).
 const PATHS = [
+    '/api/v1/categories',
+    '/api/v1/home',
+    '/api/v1/catalog/health',
+    '/api/v1/genres',
+    '/api/v1/countries',
+    '/api/v1/languages',
     '/api/v1/stats',
     '/api/v1/collections',
     '/api/v1/years',
     '/api/v1/sources',
+    '/api/v1/audience-tags',
+    '/api/v1/surprise',
     '/api/v1/titles',
     '/api/v1/titles/movies',
     '/api/v1/titles/tv',
@@ -54,13 +69,43 @@ const PATHS = [
     '/api/v1/genres-catalog',
     '/api/v1/countries-catalog',
     '/api/v1/languages-catalog',
+    '/api/v1/sitemap.xml',
     '/health',
+];
+// Generated SVG poster / backdrop endpoints (no sub-path so list them separately)
+const POSTER_PATHS = [
+    '/api/v1/poster/',
+    '/api/v1/backdrop/',
+];
+// Detail-by-slug routes — collection / genre / country detail pages
+const DETAIL_PATHS = [
+    '/api/v1/collections/',
+    '/api/v1/genres/',
+    '/api/v1/countries/',
+    '/api/v1/languages/',
 ];
 for (const p of PATHS) {
     router.get(p, proxy(p));
 }
+// Generated SVG poster/backdrop — only numeric ids allowed
+for (const base of POSTER_PATHS) {
+    router.get(base + ':id', (req, res, next) => {
+        if (!/^\d+$/.test(req.params.id || '')) return next();
+        return proxy(base)(req, res);
+    });
+}
+// Detail-by-slug routes (collection/genre/country/language) — only GET, only short slugs
+for (const base of DETAIL_PATHS) {
+    router.get(base + ':slug', (req, res, next) => {
+        const slug = (req.params.slug || '').trim();
+        // Reject slugs with weird characters or that look like other sub-paths
+        if (!slug || /[^a-zA-Z0-9_\-]/.test(slug)) return next();
+        return proxy(base)(req, res);
+    });
+}
 // Detail routes with sub-paths need wildcard matching
-router.get(/^\/api\/v1\/title\/[^/]+(\/(availability|seasons))?$/, (req, res) => {
+// Phase 2-15: includes /seasons, /availability, /translations, /cast, /assets, /season/:num/episodes
+router.get(/^\/api\/v1\/title\/[^/]+.*$/, (req, res) => {
     const upstreamUrl = CATALOG_UPSTREAM + req.originalUrl;
     console.log(`[catalog-proxy] ${req.method} ${req.originalUrl} -> ${upstreamUrl}`);
     const url = new URL(upstreamUrl);

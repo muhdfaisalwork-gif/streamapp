@@ -1,12 +1,16 @@
 {
   "name": "streamapp-launcher",
   "version": "2.0.0",
-  "description": "StreamApp Windows launcher — opens the deployed web app in the default browser and adds itself to the Windows Startup group.",
+  "description": "StreamApp cross-platform launcher — opens the deployed web app in the default browser on Windows, macOS, and Linux.",
   "bin": "streamapp-launcher.js",
   "main": "streamapp-launcher.js",
   "scripts": {
-    "build": "pkg . --targets node18-win-x64 --output dist/StreamApp.exe",
-    "build-arm64": "pkg . --targets node18-win-arm64 --output dist/StreamApp-arm64.exe"
+    "build":          "pkg . --targets node18-win-x64    --output dist/StreamApp.exe",
+    "build:linux64":  "pkg . --targets node18-linux-x64  --output dist/StreamApp-linux-x64",
+    "build:linuxarm": "pkg . --targets node18-linux-arm64 --output dist/StreamApp-linux-arm64",
+    "build:macos64":  "pkg . --targets node18-macos-x64  --output dist/StreamApp-macos-x64",
+    "build:macosarm": "pkg . --targets node18-macos-arm64 --output dist/StreamApp-macos-arm64",
+    "build:all":      "npm run build && npm run build:linux64 && npm run build:linuxarm && npm run build:macos64 && npm run build:macosarm"
   },
   "devDependencies": {
     "pkg": "^5.8.1"
