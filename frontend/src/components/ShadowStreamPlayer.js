@@ -999,10 +999,23 @@ export default function ShadowStreamPlayer({
                             height: '100%',
                             border: 'none',
                             backgroundColor: '#000000',
-                            // Crop / stretch for embed mode. transformOrigin is
-                            // centred so cropping takes equal bites off both sides.
+                            // Crop / stretch for embed mode.
+                            //
+                            // Anchored to the BOTTOM in both modes, because the
+                            // provider renders its own control bar — play/pause,
+                            // CC, settings — at the bottom of the frame, and a
+                            // centred origin scaled the iframe past the
+                            // overflow:hidden wrapper. Measured: 48px of the
+                            // frame's bottom was being clipped away in Stretch
+                            // and 48px in Crop, taking the control bar with it.
+                            //
+                            // A bottom anchor never introduces a gap; it only
+                            // moves any excess (crop or letterbox) to the top,
+                            // which our own title bar already sits over. The top
+                            // is also the safer edge to lose — burnt-in subtitles
+                            // live at the bottom.
                             transform: embedTransform ? embedTransform.transform : 'none',
-                            transformOrigin: 'center center',
+                            transformOrigin: viewMode === 'fit' ? 'center center' : 'center bottom',
                         }}
                         allowFullScreen
                         referrerPolicy="origin"
